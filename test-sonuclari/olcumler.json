@@ -1,0 +1,140 @@
+[
+  {
+    "name": "sade",
+    "mode": "cpu",
+    "actual": "CPU",
+    "frames": 60,
+    "ms": 9.621666666666957,
+    "fps": 103.9320976961687,
+    "firstMs": 17.5,
+    "framingMs": 69.60000000000582,
+    "iou": 1,
+    "mae": 0,
+    "profile": {
+      "gpuMs": 0,
+      "cpuMs": 101.39999999999418,
+      "firstMs": 432.80000000001746,
+      "iou": 0.9990395981087471,
+      "mae": 0.43299070719021915,
+      "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "bytes": 3922512
+    },
+    "jsHeap": 42100000,
+    "spriteSeconds": 21.32667151199999
+  },
+  {
+    "name": "sade",
+    "mode": "gpu",
+    "actual": "WebGL2 (yazılım)",
+    "frames": 60,
+    "ms": 21.978333333333527,
+    "fps": 45.49935542579773,
+    "firstMs": 231.29999999998836,
+    "framingMs": 69.60000000000582,
+    "iou": 0.9967388772420219,
+    "mae": 0.7502338634237605,
+    "profile": {
+      "gpuMs": 21.20000000001164,
+      "cpuMs": 5.600000000005821,
+      "firstMs": 115.89999999999418,
+      "iou": 0.9980360869031545,
+      "mae": 0.5570450539089082,
+      "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "bytes": 1022544
+    },
+    "jsHeap": 42100000,
+    "spriteSeconds": 44.303510741
+  },
+  {
+    "name": "zirhli",
+    "mode": "cpu",
+    "actual": "CPU",
+    "frames": 60,
+    "ms": 7.85,
+    "fps": 127.38853503184714,
+    "firstMs": 21,
+    "framingMs": 59.70000000001164,
+    "iou": 1,
+    "mae": 0,
+    "profile": {
+      "gpuMs": 0.10000000000582077,
+      "cpuMs": 91.80000000001746,
+      "firstMs": 378.1000000000058,
+      "iou": 0.9998880555244599,
+      "mae": 0.45876250186595013,
+      "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "bytes": 4119228
+    },
+    "jsHeap": 42100000,
+    "spriteSeconds": 20.41671725500001
+  },
+  {
+    "name": "zirhli",
+    "mode": "gpu",
+    "actual": "WebGL2 (yazılım)",
+    "frames": 60,
+    "ms": 24.196666666666957,
+    "fps": 41.328006612480564,
+    "firstMs": 245.89999999999418,
+    "framingMs": 59.70000000001164,
+    "iou": 0.9977735723032395,
+    "mae": 1.0677590201919893,
+    "profile": {
+      "gpuMs": 23.39999999999418,
+      "cpuMs": 7.399999999994179,
+      "firstMs": 120.09999999997672,
+      "iou": 0.9989736891211047,
+      "mae": 0.5216836337598456,
+      "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "bytes": 1219260
+    },
+    "jsHeap": 42100000,
+    "spriteSeconds": 45.98778038299997
+  },
+  {
+    "name": "png",
+    "mode": "cpu",
+    "actual": "CPU",
+    "frames": 60,
+    "ms": 7.043333333332945,
+    "fps": 141.97823000474042,
+    "firstMs": 11.599999999976717,
+    "framingMs": 114.39999999996508,
+    "iou": 1,
+    "mae": 0,
+    "profile": {
+      "gpuMs": 0.09999999997671694,
+      "cpuMs": 81.10000000003492,
+      "firstMs": 268.69999999995343,
+      "iou": 0.9991077222582738,
+      "mae": 0.21141511731752863,
+      "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "bytes": 5073876
+    },
+    "jsHeap": 42100000,
+    "spriteSeconds": 20.111120642999992
+  },
+  {
+    "name": "png",
+    "mode": "gpu",
+    "actual": "WebGL2 (yazılım)",
+    "frames": 60,
+    "ms": 23.415000000000386,
+    "fps": 42.70766602605097,
+    "firstMs": 239.79999999998836,
+    "framingMs": 114.39999999996508,
+    "iou": 0.9946949602122016,
+    "mae": 0.46584615384615385,
+    "profile": {
+      "gpuMs": 22.5,
+      "cpuMs": 6.7999999999883585,
+      "firstMs": 119.59999999997672,
+      "iou": 0.9985307866969414,
+      "mae": 0.2505350454788657,
+      "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "bytes": 2173908
+    },
+    "jsHeap": 42100000,
+    "spriteSeconds": 45.34547242399998
+  }
+]
