@@ -1,0 +1,26 @@
+name: V14 HTML indirme paketi
+on:
+  push:
+    branches: [gelistirme/webgl2-v14]
+    paths:
+      - .github/workflows/html-download.yml
+      - Forge_25D_V14_WebGL2.html
+  workflow_dispatch:
+jobs:
+  paket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: HTML varlığını doğrula
+        run: |
+          test -s Forge_25D_V14_WebGL2.html
+          grep -q 'Forge 2.5D V14' Forge_25D_V14_WebGL2.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Forge_25D_V14_WebGL2_HTML
+          path: Forge_25D_V14_WebGL2.html
+          retention-days: 7
+          if-no-files-found: error
