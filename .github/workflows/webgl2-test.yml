@@ -21,5 +21,12 @@ jobs:
           git config user.name 'Forge Test'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add test-sonuclari
+          if git diff --cached --quiet; then
+            echo 'Test çıktılarında değişiklik yok.'
+            exit 0
+          fi
           git commit -m 'WebGL2 ve CPU karşılaştırma sonuçları'
+          # Test çalışırken dala yeni commit gelmiş olabilir.
+          git fetch origin gelistirme/webgl2-v14
+          git rebase origin/gelistirme/webgl2-v14
           git push origin HEAD:gelistirme/webgl2-v14
