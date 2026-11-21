@@ -1,0 +1,25 @@
+name: WebGL2 dosya ve görüntü testi
+on:
+  push:
+    branches: [gelistirme/webgl2-v14]
+    paths: [Forge_25D_V14_WebGL2.html, test/check_webgl.py, .github/workflows/webgl2-test.yml]
+permissions:
+  contents: write
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install playwright==1.55.0 Pillow==11.3.0
+      - run: python -u test/check_webgl.py
+      - name: Doğrulanan çıktıları geliştirme dalına kaydet
+        run: |
+          git config user.name 'Forge Test'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add test-sonuclari
+          git commit -m 'WebGL2 ve CPU karşılaştırma sonuçları'
+          git push origin HEAD:gelistirme/webgl2-v14
