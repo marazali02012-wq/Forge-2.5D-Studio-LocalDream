@@ -85,4 +85,30 @@ with sync_playwright() as p:
  page.evaluate("ForgeShell.go('model');const s=document.getElementById('render-mode');s.value='gpu';s.onchange();ForgeV12.draw();Forge3D.renderEngine.renderer.gl.getExtension('WEBGL_lose_context').loseContext()")
  page.wait_for_function("Forge3D.renderEngine.reason.includes('kayb')")
  page.evaluate("ForgeV12.draw()");assert page.evaluate("Forge3D.renderEngine.path==='CPU'")
+ # Mobile layout and workflow persistence regression checks (no actual Mali GPU claim).
+ mobile=[]
+ page.evaluate("Forge3D.renderEngine.set('cpu')")
+ for w,h in [(390,844),(360,740),(740,360),(667,375)]:
+  page.set_viewport_size({'width':w,'height':h})
+  base=page.evaluate("({mesh:ForgeV12.S3.ch?.mesh?.vertexCount,atlas:ForgeV12.S3.atlas?.key||null})")
+  for tab in ['uret','duzenle','model','anim','aktar','ayar']:
+   page.evaluate("tab=>ForgeShell.go(tab)",tab)
+   result=page.evaluate("""tab=>{
+     const panel=document.getElementById('tab-'+tab);
+     const links=[...document.querySelectorAll('#tabs .tab-btn')];
+     const nav=document.getElementById('tabs').getBoundingClientRect();
+     return {tab, width:innerWidth,height:innerHeight,
+       scrollWidth:document.documentElement.scrollWidth,
+       visible:!!panel&&!panel.hidden,
+       navCount:links.length,
+       navVisible:nav.width>40&&nav.height>30,
+       mesh:ForgeV12.S3.ch?.mesh?.vertexCount,
+       atlas:ForgeV12.S3.atlas?.key||null};
+   }""",tab)
+   assert result['visible'] and result['navCount']==6 and result['navVisible'],result
+   assert result['scrollWidth']<=w+2,'Yatay tasma: '+str(result)
+   assert result['mesh']==base['mesh'] and result['atlas']==base['atlas'],'Sekme degisince model kayboldu: '+str(result)
+   mobile.append(result)
+ (out/'mobil-ekranlar.json').write_text(json.dumps(mobile,indent=2,ensure_ascii=False))
+ print('PASS MOBILE',len(mobile),'ekran/sekme kontrolu',flush=True)
  browser.close()
