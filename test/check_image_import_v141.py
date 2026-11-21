@@ -33,7 +33,7 @@ with sync_playwright() as pw:
  for ext in ('jpg','webp'):
   filename=f'import-test.{ext}'
   page.locator('#importFile').set_input_files(str(assets/filename))
-  page.wait_for_function("name=>ForgeV11.state.customFileName===name",filename,timeout=15000)
+  page.wait_for_function("name=>ForgeV11.state.customFileName===name",arg=filename,timeout=15000)
   assert page.locator('#importFile').input_value()==''
   assert 'Resim yüklendi:' in page.locator('#ed-status').inner_text()
   print('PASS '+ext+' editor',flush=True)
