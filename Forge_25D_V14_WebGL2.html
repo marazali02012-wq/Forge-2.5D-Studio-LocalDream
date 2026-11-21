@@ -2970,7 +2970,12 @@ class WebGLRenderer{
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,preserveDrawingBuffer:false});
   if(!gl)throw Error('WebGL2 bağlamı açılamadı');
   this.gl=gl;this.canvas=canvas;this.buffers=[];this.bytes=0;
-  this.modelProgram=program(gl,vs,fs);
+  this.hybrid=false;
+  try{this.modelProgram=program(gl,vs,fs);}catch(fullShaderError){
+   // Only omit skeletal deformation on devices whose driver rejects the bone array.
+   const basic=vs.replace('uniform mat4 bones[26];','').replace(/mat4 skin=bones[\s\S]*?bones\[int\(joints.w\)\]\*weights.w;/,'mat4 skin=mat4(1.);');
+   this.modelProgram=program(gl,basic,fs);this.hybrid=true;
+  }
   try{this.screenProgram=program(gl,screenVS,screenFS);}catch(e){gl.deleteProgram(this.modelProgram);throw e;}
   const uniforms=(p,names)=>Object.fromEntries(names.split(' ').map(k=>[k,gl.getUniformLocation(p,k)]));
   this.m=uniforms(this.modelProgram,'bones[0] rightAxis upAxis eye projection atlas textured highlight light fillLight tint shade[0]');
@@ -2981,11 +2986,11 @@ class WebGLRenderer{
   const ext=gl.getExtension('WEBGL_debug_renderer_info');
   this.driver=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'Sürücü adı gizli';
  }
- releaseMesh(){
+ releaseMesh(keepAtlas=false){
   const gl=this.gl;for(const b of this.buffers)gl.deleteBuffer(b);this.buffers=[];
   if(this.vao)gl.deleteVertexArray(this.vao);
-  if(this.atlas)gl.deleteTexture(this.atlas);
-  this.mesh=this.vao=this.atlas=null;this.bytes=0;
+  if(this.atlas&&!keepAtlas){gl.deleteTexture(this.atlas);this.atlas=null;this.atlasSource=null;}
+  this.mesh=this.vao=this.skinOut=null;this.bytes=0;this.dynamic=[];
  }
  texture(filter){
   const gl=this.gl,t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
@@ -2994,21 +2999,21 @@ class WebGLRenderer{
  }
  bind(mesh){
   const gl=this.gl;if(this.mesh===mesh)return;
-  this.releaseMesh();this.vao=gl.createVertexArray();gl.bindVertexArray(this.vao);
+  const keep=!!this.atlas&&this.atlasSource===mesh.texture;this.releaseMesh(keep);this.vao=gl.createVertexArray();gl.bindVertexArray(this.vao);
   const flags=new Uint8Array(mesh.vertexCount*4);
   for(let i=0;i<mesh.vertexCount;i++){
    const k=mesh.part[i];flags.set([mesh.clothPart?.[k]||0,mesh.doubleSidedPart[k],mesh.parts[k].estimated?1:0,mesh.material[i]],4*i);
   }
-  const array=(target,arr)=>{const b=gl.createBuffer();this.buffers.push(b);gl.bindBuffer(target,b);gl.bufferData(target,arr,gl.STATIC_DRAW);this.bytes+=arr.byteLength;};
+  const array=(target,arr,dynamic=false)=>{const b=gl.createBuffer();this.buffers.push(b);gl.bindBuffer(target,b);gl.bufferData(target,arr,dynamic?gl.DYNAMIC_DRAW:gl.STATIC_DRAW);this.bytes+=arr.byteLength;return b;};
   for(const [loc,arr,n] of [[0,mesh.position,3],[1,mesh.normal,3],[2,mesh.uv,2],[3,mesh.color,3],[4,mesh.joints,4],[5,mesh.weights,4],[6,flags,4]]){
    if(!arr)continue;
-   array(gl.ARRAY_BUFFER,arr);gl.enableVertexAttribArray(loc);
+   const dynamic=this.hybrid&&loc<2,buffer=array(gl.ARRAY_BUFFER,arr,dynamic);if(dynamic)this.dynamic[loc]=buffer;gl.enableVertexAttribArray(loc);
    gl.vertexAttribPointer(loc,n,arr instanceof Float32Array?gl.FLOAT:arr instanceof Uint16Array?gl.UNSIGNED_SHORT:gl.UNSIGNED_BYTE,false,0,0);
   }
   array(gl.ELEMENT_ARRAY_BUFFER,mesh.index);this.indexType=mesh.index.BYTES_PER_ELEMENT===4?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT;
-  gl.activeTexture(gl.TEXTURE0);this.atlas=this.texture(gl.LINEAR);
+  gl.activeTexture(gl.TEXTURE0);
   const t=mesh.texture, pixels=t?new Uint8Array(t.rgba.buffer,t.rgba.byteOffset,t.rgba.byteLength):new Uint8Array([255,255,255,255]);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,t?.width||1,t?.height||1,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+  if(!keep){this.atlas=this.texture(gl.LINEAR);this.atlasSource=t;gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,t?.width||1,t?.height||1,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);}
   this.bytes+=pixels.byteLength;this.mesh=mesh;this.check();
  }
  freeTarget(){
@@ -3038,7 +3043,11 @@ class WebGLRenderer{
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.atlas);
   const {r,u,d}=F.cameraBasis(o.yaw||0,o.pitch??.33),m=this.m;
   const light=(x,y,z)=>F.v3.norm(r.map((a,i)=>a*x+u[i]*y+d[i]*z));
-  gl.uniformMatrix4fv(m['bones[0]'],false,mats);
+  if(this.hybrid){
+   this.skinOut=F.skinVertices(mesh,mats,this.skinOut);for(const [i,arr] of [this.skinOut.pos,this.skinOut.nrm].entries()){
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.dynamic[i]);gl.bufferSubData(gl.ARRAY_BUFFER,0,arr);
+   }
+  }else gl.uniformMatrix4fv(m['bones[0]'],false,mats);
   gl.uniform3fv(m.rightAxis,r);gl.uniform3fv(m.upAxis,u);gl.uniform3fv(m.eye,d);gl.uniform3fv(m.light,light(-.55,.75,.62));gl.uniform3fv(m.fillLight,light(.8,.1,-.3));
   gl.uniform4f(m.projection,2*o.scale/w,2*o.scale/h,2*o.cx/w-1,1-2*o.cy/h);
   gl.uniform1i(m.textured,mesh.texture?1:0);gl.uniform1i(m.highlight,o.highlight?1:0);gl.uniform4fv(m.tint,o.tint||[0,0,0,0]);
@@ -3061,7 +3070,7 @@ const median=a=>a.slice().sort((x,y)=>x-y)[a.length>>1];
 class Engine{
  constructor(){this.mode='auto';this.path='CPU';this.reason='';this.metrics=null;}
  set(mode){if(this.mode!==mode){this.mode=mode;this.reset();}}
- reset(){this.decision=null;this.reason='';if(this.renderer){this.renderer.dispose();this.renderer=null;}this.path='CPU';}
+ reset(){this.decision=null;this.reason='';this.mesh=null;this.metrics=null;this.lowMemory=false;if(this.renderer){this.renderer.dispose();this.renderer=null;}this.path='CPU';}
  init(){
   if(!this.canvas){
    this.canvas=typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(1,1):document.createElement('canvas');
@@ -3071,6 +3080,7 @@ class Engine{
   this.renderer=new WebGLRenderer(this.canvas);
  }
  frame(mesh,mats,o,read=true){
+  if(this.lowMemory&&o.ss>1)o={...o,ss:1};
   const cpu=()=>F.render(mesh,F.skinVertices(mesh,mats),o);
   if(this.mode==='cpu'){this.path='CPU';return cpu();}
   try{
@@ -3097,10 +3107,16 @@ class Engine{
     }
     if(this.decision){
      this.path=/llvmpipe|swiftshader|software|softpipe/i.test(this.renderer.driver)?'WebGL2 (yazılım)':'WebGL2';
+     if(this.renderer.hybrid)this.path+=' · CPU skinning';
      return this.renderer.draw(mesh,mats,o,read);
     }
    }
-  }catch(e){this.reset();this.decision=false;this.reason=e.message;}
+  }catch(e){
+   const memory=/(1285|memory|tampon)/i.test(e.message);
+   this.reset();this.reason=e.message;this.lowMemory=memory;
+   if(memory&&o.ss>1)return this.frame(mesh,mats,{...o,ss:1},read);
+   this.decision=false;
+  }
   this.path='CPU';return cpu();
  }
 }
@@ -3116,10 +3132,11 @@ F.WebGLRenderer=WebGLRenderer;F.renderEngine=new Engine();
   const F = self.Forge3D;
   let cancel = false;
   const post = (m, tr) => self.postMessage(m, tr || []);
+  let encodeCanvas=null;
   async function png(rgba, w, h) {
     if (typeof OffscreenCanvas !== 'undefined') {
       try {
-        const c = new OffscreenCanvas(w, h), x = c.getContext('2d');
+        const c=encodeCanvas||(encodeCanvas=new OffscreenCanvas(w,h));if(c.width!==w)c.width=w;if(c.height!==h)c.height=h;const x=c.getContext('2d');
         x.putImageData(new ImageData(rgba, w, h), 0, 0);
         const b = await c.convertToBlob({ type: 'image/png' });
         return new Uint8Array(await b.arrayBuffer());
@@ -3141,7 +3158,7 @@ F.WebGLRenderer=WebGLRenderer;F.renderEngine=new Engine();
         for (let d = 0; d < 8; d++) for (const clip of F.CLIP_KEYS) {
           const name = `directions/dir${d}_${F.DIR_KEYS[d]}/${clip}.png`;
           if (have.has(name)) continue;
-          if (cancel) { post({ type: 'cancelled', done, total }); return; }
+          if (cancel) { F.renderEngine.reset();encodeCanvas=null;post({ type: 'cancelled', done, total }); return; }
           const tr = performance.now();
           const sh = F.renderSheet(ch, clip, d, { ss: quality });
           const backend=F.renderEngine.path;engines[name]=backend;
@@ -3152,7 +3169,7 @@ F.WebGLRenderer=WebGLRenderer;F.renderEngine=new Engine();
           post({ type: 'sheet', name, data, backend,footRows: F.footRows(sh, ch.framing.frame), done, total, renderMs: rMs, encodeMs: performance.now() - te }, [data.buffer]);
           await new Promise(r => setTimeout(r,Math.max(m.coolMs||0,slowSheets>=2?30:0)));
         }
-        post({ type: 'sprites-done', engines,backend:F.renderEngine.path,reason:F.renderEngine.reason,profile:F.renderEngine.metrics,ms: performance.now() - t0 });F.renderEngine.reset();
+        post({ type: 'sprites-done', engines,backend:F.renderEngine.path,reason:F.renderEngine.reason,profile:F.renderEngine.metrics,ms: performance.now() - t0 });F.renderEngine.reset();encodeCanvas=null;
       } else if (m.type === 'glb') {
         const t0 = performance.now(), ch = F.createCharacter(m.src);
         const glb = F.exportGLB(ch.skel, ch.mesh, { name: m.name || 'Forge_Savasci' });

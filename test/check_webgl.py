@@ -78,6 +78,9 @@ with sync_playwright() as p:
    if name!='png' or mode!='gpu':path.unlink()
    print('PASS',row,flush=True);rows.append(row)
   (out/'olcumler.json').write_text(json.dumps(rows,indent=2,ensure_ascii=False))
+ # Check that automatic mode follows its own measured comparison.
+ page.evaluate("ForgeShell.go('model');const s=document.getElementById('render-mode');s.value='auto';s.onchange();ForgeV12.draw()")
+ assert page.evaluate("(()=>{const e=Forge3D.renderEngine;return !!e.metrics && (e.path==='CPU')===(e.metrics.cpuMs<=e.metrics.gpuMs)})()")
  # Trigger a genuine loss on the preview context and verify a CPU frame.
  page.evaluate("ForgeShell.go('model');const s=document.getElementById('render-mode');s.value='gpu';s.onchange();ForgeV12.draw();Forge3D.renderEngine.renderer.gl.getExtension('WEBGL_lose_context').loseContext()")
  page.wait_for_function("Forge3D.renderEngine.reason.includes('kayb')")
