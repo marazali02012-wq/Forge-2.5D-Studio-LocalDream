@@ -63,6 +63,7 @@ with sync_playwright() as pw:
     assert page.locator("#trellis2-image").count() == 1
     assert page.locator("#trellis2-proxy").input_value() == ""
     assert page.locator("#trellis2-engine").input_value() == "sf3d"
+    assert page.locator("#sf3d-official-fallback").get_attribute("href") == "https://huggingface.co/spaces/stabilityai/stable-fast-3d"
     page.locator("#trellis2-engine").select_option("trellis2")
     page.locator("#trellis2-diagnostic").click()
     page.wait_for_function("document.querySelector('#trellis2-status').textContent.includes('API bağlantısı doğrulandı')",timeout=30000)

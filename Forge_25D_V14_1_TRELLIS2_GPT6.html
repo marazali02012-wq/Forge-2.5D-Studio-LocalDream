@@ -4401,7 +4401,7 @@ self.onmessage = async ev => {
   const HF_SPACE = "microsoft/TRELLIS.2";
   const SF3D_SPACE = "stabilityai/stable-fast-3d";
   const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "", generating: false, mixer: null, animationFrame: 0, resizeHandler: null };
-  let view, statusEl, proxyEl, engineEl, sourceFileEl, generateBtn, diagnosticBtn, originalHost, controlsEl;
+  let view, statusEl, proxyEl, engineEl, sourceFileEl, generateBtn, diagnosticBtn, fallbackLink, originalHost, controlsEl;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   function status(msg, bad = false) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = bad ? "#ffb49e" : "#a7ebd0"; }
@@ -4695,12 +4695,22 @@ self.onmessage = async ev => {
     status("Stable Fast 3D bağlantısı kuruluyor…");
     const {app, handle_file} = await connectOfficial(SF3D_SPACE);
     status("Şeffaf karakter resmi işleniyor…");
-    await app.predict("/requires_bg_remove", {image:handle_file(image), fr:0.85});
-    status("Stable Fast 3D gerçek mesh ve UV kaplama oluşturuyor…");
-    const output = await app.predict("/run_button", {
-      input_image:handle_file(image), foreground_ratio:0.85,
-      remesh_option:"None", vertex_count:-1, texture_size:1024
-    });
+    try {
+      await app.predict("/requires_bg_remove", {image:handle_file(image), fr:0.85});
+    } catch (err) {
+      throw Error("SF3D görsel hazırlama (/requires_bg_remove): " + String(err?.message || err));
+    }
+    status("Stable Fast 3D görsel hazır. Gerçek mesh ve UV üretimi isteniyor…");
+    let output;
+    try {
+      output = await app.predict("/run_button", {
+        input_image:handle_file(image), foreground_ratio:0.85,
+        remesh_option:"None", vertex_count:-1, texture_size:1024
+      });
+    } catch (err) {
+      throw Error("SF3D mesh üretimi (/run_button): " + String(err?.message || err)
+        + ". Resmî web demosu çalışabilir; 'Resmî 3D demosunu aç' seçeneğini kullanabilirsiniz.");
+    }
     const url = returnedFile(output);
     status("Gerçek Stable Fast 3D GLB alınıyor…");
     const bytes = await limitedGLBDownload(url);
@@ -4820,6 +4830,7 @@ self.onmessage = async ev => {
     engineEl.value = "sf3d";
     engineEl.addEventListener("change", () => {
       if (proxyEl) { proxyEl.value = ""; }
+      if (fallbackLink) fallbackLink.hidden = engineEl.value !== "sf3d";
       status(engineEl.value === "sf3d"
         ? "Stable Fast 3D: şeffaf PNG/WEBP kullanın. Ücretsiz GPU kotası garanti değil."
         : "TRELLIS.2: resmî GPU üretimi hata verdi; bu motor deneysel.");
@@ -4836,9 +4847,16 @@ self.onmessage = async ev => {
     generateBtn = btn;
     diagnosticBtn = makeButton("API bağlantısını kontrol et", diagnoseOfficial);
     diagnosticBtn.id = "trellis2-diagnostic";
+    fallbackLink = document.createElement("a");
+    fallbackLink.id = "sf3d-official-fallback";
+    fallbackLink.href = "https://huggingface.co/spaces/stabilityai/stable-fast-3d";
+    fallbackLink.target = "_blank";
+    fallbackLink.rel = "noopener noreferrer";
+    fallbackLink.textContent = "Resmî 3D demosunu aç — GLB indirip Forge'a yükle";
+    fallbackLink.style.cssText = "display:inline-block;margin-top:5px;font-size:12px;color:#b3e1ff;text-decoration:underline";
     statusEl = document.createElement("p"); statusEl.id = "trellis2-status"; statusEl.setAttribute("role", "status"); statusEl.style.cssText = "font-size:12px;overflow-wrap:anywhere";
     advanced.append(summary, label);
-    area.append(engineLabel, fileLabel, btn, diagnosticBtn, advanced, statusEl);
+    area.append(engineLabel, fileLabel, btn, diagnosticBtn, fallbackLink, advanced, statusEl);
     const ctrl = model.querySelector(".col-ctl");
     // Keep the real 3D action visible beside the source information, not below every setting.
     const sourceLine = ctrl?.querySelector("#s3-srcline");

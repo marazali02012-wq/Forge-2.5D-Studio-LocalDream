@@ -36,3 +36,7 @@ Yeni Forge HTML'de **3D Model** bölümüne gir, **TRELLIS.2 kaynak resmi** alan
 - Resmî ücretsiz ZeroGPU kotası dalgalanır. API çağrıları Chrome'da çalışırsa dahi kalıcı ücretsiz servis garantisi yoktur.
 - **Lisans:** Stable Fast 3D modelindeki Stability AI Community License koşulları, kullanım ölçeği ve ticari dağıtıma göre ayrıca değerlendirilmelidir.
 - `test_direct_client.py` sahte servis yanıtıyla API yönlendirme testidir; **gerçek GPU üretim testi değildir**.
+
+## 22 Kasım 2026 gerçek API testi sonucu
+
+**Dürüst durum:** GitHub CI üzerinde resmî şeffaf `otter_samurai.png` örneği Forge HTML'inden Stable Fast 3D API'sine yollandı. **Sonuç: `An error occurred`, GLB oluşmadı.** Resmî Gradio demo arayüzü aynı gün örnekten dokulu GLB üretebildi. Bu, resmî Gradio API'si ile web arayüzü arasında farklı davranış olduğunu gösterir. Tek başına URL veya hazır GLB testinin başarılı olması tam entegrasyon başarısı değildir. Yeni sürüm artık başarısız aşamanın adını gösterir; ayrıca aynı 3D Model bölümüne **Resmî 3D demosunu aç** bağlantısı eklendi. Web demosundan indirilen gerçek GLB, Forge'un mevcut GLB dosya alanına alınabilir. Bu yedek yol tam otomasyon değildir.

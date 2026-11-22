@@ -78,6 +78,8 @@ try:
                 if page.evaluate("ForgeTrellis2.state.active") or ("tamamlanamadı" in status):
                     break
             report["ui_status"] = status[:1000]
+            report["provider_phase"] = "requires_bg_remove" if "/requires_bg_remove" in status else (
+                "run_button" if "/run_button" in status else "unknown")
             report["browser_errors"] = errors[:10]
             if not page.evaluate("ForgeTrellis2.state.active"):
                 report["error"] = "No valid 3D viewer after GPU request"
