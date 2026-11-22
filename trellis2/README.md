@@ -26,3 +26,13 @@ Yeni Forge HTML'de **3D Model** bölümüne gir, **TRELLIS.2 kaynak resmi** alan
 ## Gerçek bağlantı testi (GPU kullanmaz)
 
 `trellis2/test_live_connection.py`, GitHub Actions üzerinde Forge HTML'nin kullandığı **gerçek jsDelivr Gradio modülünü** indirmeyi ve `microsoft/TRELLIS.2` API'sine bağlanmayı dener. `test-sonuclari/trellis2/gercek_api_baglanti.json` dosyasına sonucu yazar. Dış hizmet erişilemezse ana regresyon testini düşürmez, fakat test sonucu hatadır. **Bu test hiçbir 3D üretimi başlatmaz; resmi Space'te GPU testinde Generate -> Error, Extract -> Empty value görüldü.** API bağlantısı başarılı olsa da 3D üretim hazır demek değildir.
+
+## Yeni çalışan alternatif: Stable Fast 3D (SF3D)
+
+- 22 Kasım 2026'da resmî `stabilityai/stable-fast-3d` demoda gerçek bir örnek görselin **UV kaplamalı GLB** üretimi ve 3D önizlemesi başarıyla doğrulandı. Bu, TRELLIS.2 arızasına bağımlı olmayan ayrı motordur.
+- Forge HTML'de varsayılan üretim motoru **Stable Fast 3D**; TRELLIS.2 isteğe bağlı deneysel motor olarak korunur.
+- **Kaynak görsel şeffaf PNG/WEBP olmalıdır**; SF3D'nin açık API'si arka planı kaldırılmamış JPEG için iki aşamalı durum kullandığından bu sürüm opak kaynaklarla otomatik üretim yapmaz. Gerçek olmayan arka plan kesme uygulanmaz.
+- Üretim tek resimden gerçek mesh + UV + doku çıkarır; fakat 26 kemikli otomatik rigging sağlamaz. 3D model orijinal GLB olarak indirilir.
+- Resmî ücretsiz ZeroGPU kotası dalgalanır. API çağrıları Chrome'da çalışırsa dahi kalıcı ücretsiz servis garantisi yoktur.
+- **Lisans:** Stable Fast 3D modelindeki Stability AI Community License koşulları, kullanım ölçeği ve ticari dağıtıma göre ayrıca değerlendirilmelidir.
+- `test_direct_client.py` sahte servis yanıtıyla API yönlendirme testidir; **gerçek GPU üretim testi değildir**.

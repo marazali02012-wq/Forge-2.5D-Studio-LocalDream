@@ -6,8 +6,9 @@
   const MAX_GLB_BYTES = 90 * 1024 * 1024;
   const GRADIO_JS_URL = "https://cdn.jsdelivr.net/npm/@gradio/client@2.7.0/dist/index.min.js";
   const HF_SPACE = "microsoft/TRELLIS.2";
+  const SF3D_SPACE = "stabilityai/stable-fast-3d";
   const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "", generating: false, mixer: null, animationFrame: 0, resizeHandler: null };
-  let view, statusEl, proxyEl, sourceFileEl, generateBtn, diagnosticBtn, originalHost, controlsEl;
+  let view, statusEl, proxyEl, engineEl, sourceFileEl, generateBtn, diagnosticBtn, originalHost, controlsEl;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   function status(msg, bad = false) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = bad ? "#ffb49e" : "#a7ebd0"; }
@@ -243,23 +244,26 @@
     if (!file) throw Error("TRELLIS.2 GLB dosyası döndürmedi; GPU üretimi başarısız olabilir");
     return file.url || file.path;
   }
-  async function connectOfficial() {
+  async function connectOfficial(space = HF_SPACE) {
     let library;
     try { library = await import(GRADIO_JS_URL); }
     catch (err) { throw Error("Gradio istemcisi yüklenemedi (internet/CDN): " + String(err?.message || err)); }
     if (!library.Client?.connect || !library.handle_file) throw Error("Gradio istemcisi uyumsuz; API başlatılamıyor");
-    const app = await library.Client.connect(HF_SPACE);
+    const app = await library.Client.connect(space);
     return {app, handle_file:library.handle_file};
   }
   async function diagnoseOfficial() {
     if (state.generating) return;
     diagnosticBtn.disabled = true;
     try {
-      status("Resmî TRELLIS.2 bağlantısı ve API kontrol ediliyor; GPU kullanılmaz…");
-      const {app} = await connectOfficial();
+      const stable = engineEl.value === "sf3d";
+      status((stable ? "Stable Fast 3D" : "TRELLIS.2") + " API bağlantısı kontrol ediliyor; GPU kullanılmaz…");
+      const {app} = await connectOfficial(stable ? SF3D_SPACE : HF_SPACE);
       const api = await app.view_api();
       const names = Object.keys(api?.named_endpoints || {});
-      const required = ["/start_session", "/preprocess_image", "/image_to_3d", "/extract_glb"];
+      const required = stable
+        ? ["/requires_bg_remove", "/run_button"]
+        : ["/start_session", "/preprocess_image", "/image_to_3d", "/extract_glb"];
       const missing = required.filter(endpoint => !names.includes(endpoint));
       if (missing.length) throw Error("Resmî API değişmiş; eksik: " + missing.join(", "));
       status("API bağlantısı doğrulandı. Üretim/ZeroGPU kotası test edilmedi.");
@@ -269,6 +273,52 @@
     } finally {
       diagnosticBtn.disabled = false;
     }
+  }
+  function hasTransparentPixels(file) {
+    return new Promise((resolve, reject) => {
+      const bmp = document.createElement("img"), url = URL.createObjectURL(file);
+      bmp.onload = () => {
+        const size = Math.min(128, Math.max(bmp.naturalWidth, bmp.naturalHeight));
+        const c = document.createElement("canvas");
+        c.width = size; c.height = size;
+        const ctx = c.getContext("2d", {willReadFrequently:true});
+        ctx.clearRect(0,0,size,size);
+        ctx.drawImage(bmp,0,0,size,size);
+        const data = ctx.getImageData(0,0,size,size).data;
+        let alpha = false;
+        for(let i=3;i<data.length;i+=4) if(data[i]<250){alpha=true;break;}
+        URL.revokeObjectURL(url); resolve(alpha);
+      };
+      bmp.onerror = () => { URL.revokeObjectURL(url); reject(Error("Resim açılamadı")); };
+      bmp.src = url;
+    });
+  }
+  async function produceStableFast3D(image) {
+    // The official Stable Fast 3D API uses a background state between upload and Run.
+    // Do not fabricate a complete 360 model from opaque JPEG or silently remove detail.
+    if (!(await hasTransparentPixels(image))) {
+      throw Error("Stable Fast 3D için şeffaf arka planlı PNG/WEBP gerekiyor. JPEG ya da düz fonlu resmi önce arka planından ayırın.");
+    }
+    status("Stable Fast 3D bağlantısı kuruluyor…");
+    const {app, handle_file} = await connectOfficial(SF3D_SPACE);
+    status("Şeffaf karakter resmi işleniyor…");
+    await app.predict("/requires_bg_remove", {image:handle_file(image), fr:0.85});
+    status("Stable Fast 3D gerçek mesh ve UV kaplama oluşturuyor…");
+    const output = await app.predict("/run_button", {
+      input_image:handle_file(image), foreground_ratio:0.85,
+      remesh_option:"None", vertex_count:-1, texture_size:1024
+    });
+    const url = returnedFile(output);
+    status("Gerçek Stable Fast 3D GLB alınıyor…");
+    const bytes = await limitedGLBDownload(url);
+    const metadata = inspectGLB(bytes);
+    const textured = metadata.meshes?.some(mesh => (mesh.primitives||[]).some(p => {
+      const mat = metadata.materials?.[p.material];
+      return Number.isInteger(mat?.pbrMetallicRoughness?.baseColorTexture?.index)
+        && Number.isInteger(p?.attributes?.TEXCOORD_0);
+    }));
+    if (!textured) throw Error("Stable Fast 3D geometri döndürdü fakat UV'li kaplama bulunamadı; eksik sonucu başarı saymıyoruz");
+    await showGLB(bytes, "stable_fast_3d_model.glb");
   }
   async function produceDirect(image) {
     status("Resmî TRELLIS.2 ZeroGPU sunucusuna bağlanılıyor…");
@@ -300,14 +350,18 @@
   async function produce() {
     if (state.generating) return;
     const image = state.image;
-    if (!image) { status("Önce TRELLIS.2 kaynak resmi seçin (PNG/JPG/WEBP).", true); return; }
+    if (!image) { status("Önce 3D kaynak resmi seçin (PNG/JPG/WEBP).", true); return; }
     state.generating = true;
     if (generateBtn) generateBtn.disabled = true;
     try {
       if (!/^image\/(png|jpeg|webp)$/.test(image.type)) throw Error("PNG/JPG/WEBP dışında kaynak kabul edilmiyor");
       if (image.size > 10 * 1024 * 1024) throw Error("Resim 10 MB üzeri");
+      const stable = engineEl.value === "sf3d";
       const customServer = proxyEl?.value?.trim();
-      if (!customServer) {
+      if (stable && customServer) throw Error("Özel proxy yalnızca TRELLIS.2 için kullanılabilir; Stable Fast 3D'de sunucu alanını boş bırakın");
+      if (stable) {
+        await produceStableFast3D(image);
+      } else if (!customServer) {
         await produceDirect(image);
       } else {
         status("Özel TRELLIS.2 sunucusuna bağlanılıyor…");
@@ -335,7 +389,7 @@
         ? " Ücretsiz GPU sırası veya kotası dolu olabilir."
         : /failed to fetch|network|cors/i.test(msg)
           ? " Bağlantı veya tarayıcı CORS engelini kontrol edin." : "";
-      status("TRELLIS.2 tamamlanamadı: " + msg.slice(0, 280) + hint, true);
+      status((engineEl.value === "sf3d" ? "Stable Fast 3D" : "TRELLIS.2") + " tamamlanamadı: " + msg.slice(0, 280) + hint, true);
     } finally {
       state.generating = false;
       if (generateBtn) generateBtn.disabled = false;
@@ -347,7 +401,7 @@
     if (!originalHost || !file || !model) return;
     const area = document.createElement("div"); area.id = "trellis2-controls"; area.style.cssText = "border-top:1px solid #3f5870;margin:8px 0;padding:8px 0";
     const fileLabel = document.createElement("label");
-    fileLabel.textContent = "TRELLIS.2 kaynak resmi (PNG/JPG/WEBP)";
+    fileLabel.textContent = "3D kaynak resmi (PNG/JPG/WEBP)";
     sourceFileEl = document.createElement("input");
     sourceFileEl.id = "trellis2-image";
     sourceFileEl.type = "file";
@@ -358,6 +412,26 @@
       if (f) { state.image = f; status("Kaynak resim seçildi: " + f.name); }
     });
     fileLabel.appendChild(sourceFileEl);
+    const engineLabel = document.createElement("label");
+    engineLabel.textContent = "Gerçek 3D üretim motoru";
+    engineEl = document.createElement("select");
+    engineEl.id = "trellis2-engine";
+    engineEl.style.cssText = "width:100%;box-sizing:border-box;margin-top:5px";
+    for (const [value, title] of [
+      ["sf3d", "Stable Fast 3D — çalışan alternatif, UV GLB"],
+      ["trellis2", "Microsoft TRELLIS.2 — deneyseldir"]
+    ]) {
+      const option = document.createElement("option"); option.value=value; option.textContent=title;
+      engineEl.append(option);
+    }
+    engineEl.value = "sf3d";
+    engineEl.addEventListener("change", () => {
+      if (proxyEl) { proxyEl.value = ""; }
+      status(engineEl.value === "sf3d"
+        ? "Stable Fast 3D: şeffaf PNG/WEBP kullanın. Ücretsiz GPU kotası garanti değil."
+        : "TRELLIS.2: resmî GPU üretimi hata verdi; bu motor deneysel.");
+    });
+    engineLabel.appendChild(engineEl);
     const advanced = document.createElement("details");
     advanced.className = "acc";
     const summary = document.createElement("summary");
@@ -365,13 +439,13 @@
     const label = document.createElement("label"); label.textContent = "Yalnızca kendi TRELLIS.2 proxy sunucun varsa HTTPS adresini gir";
     proxyEl = document.createElement("input"); proxyEl.id = "trellis2-proxy"; proxyEl.type = "url"; proxyEl.placeholder = "https://your-own-proxy.example"; proxyEl.autocomplete = "off"; proxyEl.style.cssText = "width:100%;box-sizing:border-box"; proxyEl.value = "";
     label.appendChild(proxyEl);
-    const btn = makeButton("TRELLIS.2 ile gerçek 3D üret", produce); btn.id = "trellis2-run";
+    const btn = makeButton("Seçili motorla gerçek 3D üret", produce); btn.id = "trellis2-run";
     generateBtn = btn;
     diagnosticBtn = makeButton("API bağlantısını kontrol et", diagnoseOfficial);
     diagnosticBtn.id = "trellis2-diagnostic";
     statusEl = document.createElement("p"); statusEl.id = "trellis2-status"; statusEl.setAttribute("role", "status"); statusEl.style.cssText = "font-size:12px;overflow-wrap:anywhere";
     advanced.append(summary, label);
-    area.append(fileLabel, btn, diagnosticBtn, advanced, statusEl);
+    area.append(engineLabel, fileLabel, btn, diagnosticBtn, advanced, statusEl);
     const ctrl = model.querySelector(".col-ctl");
     // Keep the real 3D action visible beside the source information, not below every setting.
     const sourceLine = ctrl?.querySelector("#s3-srcline");
@@ -392,8 +466,8 @@
       e.target.value = "";
     }, true);
     $("s3-glb-close")?.addEventListener("click", () => { if (state.active) resetViewer(); });
-    status("Resmî TRELLIS.2 bağlantısı henüz doğrulanmadı. Kaynak resim seçin veya API bağlantısını kontrol edin.");
-    window.ForgeTrellis2 = {inspectGLB, showGLB, resetViewer, get state() { return { active:state.active, hasImage:!!state.image, hasGLB:!!state.raw, generating:state.generating, job:state.job, cameraAspect:state.camera?.aspect ?? null, viewportAspect:state.renderer ? state.renderer.domElement.clientWidth / state.renderer.domElement.clientHeight : null, hasAnimation:!!state.mixer }; }};
+    status("Stable Fast 3D seçili. Şeffaf PNG/WEBP yükleyin; GPU erişimi ücretsiz demoda değişebilir.");
+    window.ForgeTrellis2 = {inspectGLB, showGLB, resetViewer, get state() { return { active:state.active, hasImage:!!state.image, hasGLB:!!state.raw, generating:state.generating, engine:engineEl?.value, job:state.job, cameraAspect:state.camera?.aspect ?? null, viewportAspect:state.renderer ? state.renderer.domElement.clientWidth / state.renderer.domElement.clientHeight : null, hasAnimation:!!state.mixer }; }};
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

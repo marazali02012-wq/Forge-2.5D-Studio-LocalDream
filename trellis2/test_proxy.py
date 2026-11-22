@@ -62,9 +62,9 @@ def test_expired_glb_private_files_removed(tmp_path):
     with srv.lock:
         srv.jobs[job_id] = {"status":"done","message":"ok","glb":str(folder / "output.glb"),
                             "folder":str(folder),"completed_at":100.}
-    assert srv.cleanup_expired_jobs(now=100.+srv.RESULT_TTL_SECONDS-1)==0
-    assert folder.exists()
-    assert srv.cleanup_expired_jobs(now=100.+srv.RESULT_TTL_SECONDS+1)>=1
+    srv.cleanup_expired_jobs(now=100.+srv.RESULT_TTL_SECONDS-1)
+    assert folder.exists() and job_id in srv.jobs
+    srv.cleanup_expired_jobs(now=100.+srv.RESULT_TTL_SECONDS+1)
     assert not folder.exists() and job_id not in srv.jobs
 
 def test_parallel_generation_rejected(monkeypatch):
