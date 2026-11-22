@@ -27,7 +27,11 @@ def test_mock_success(monkeypatch,tmp_path):
     class Mock:
         def __init__(self,space,token=None,verbose=False):assert space=="microsoft/TRELLIS.2"
         def predict(self,*args,api_name):
-            return {"/start_session":None,"/preprocess_image":args[0]["path"] if args else None,"/image_to_3d":"mock preview","/extract_glb":(str(p),str(p))}[api_name]
+            if api_name == "/start_session": return None
+            if api_name == "/preprocess_image": return args[0]["path"]
+            if api_name == "/image_to_3d": return "mock preview"
+            if api_name == "/extract_glb": return str(p),str(p)
+            raise AssertionError(api_name)
     monkeypatch.setattr(srv,"Client",Mock)
     resp=client.post("/api/jobs",headers=HEADERS,files={"image":("fighter.png",png(),"image/png")})
     assert resp.status_code==202,resp.text
