@@ -9,10 +9,7 @@ client = TestClient(srv.app)
 HEADERS={"X-Forge-Token":os.environ["FORGE_ACCESS_TOKEN"]}
 def png():
     b=io.BytesIO();Image.new("RGB",(32,32),(10,50,100)).save(b,"PNG");return b.getvalue()
-def glb():
-    j=json.dumps({"asset":{"version":"2.0"},"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"buffers":[{"byteLength":0}],"accessors":[{"componentType":5126,"count":0,"type":"VEC3"}]}).encode()
-    j+=b" "*(-len(j)%4)
-    return struct.pack("<III",0x46546C67,2,12+8+len(j)+8)+struct.pack("<II",len(j),0x4E4F534A)+j+struct.pack("<II",0,0x004E4942)
+from trellis2.test_fixture import glb
 def wait(id):
     for _ in range(100):
         state=client.get("/api/jobs/"+id,headers=HEADERS).json()
