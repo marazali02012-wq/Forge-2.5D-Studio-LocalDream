@@ -86,17 +86,33 @@ def validate_glb(path: Path) -> bool:
             materials = body.get("materials", [])
             if not meshes or not images or not textures or not materials:
                 return False
-            if not any(
-                0 <= (p.get("attributes", {}).get("POSITION", -1)) < len(accessors)
-                and accessors[p["attributes"]["POSITION"]].get("count", 0) >= 3
-                and 0 <= p.get("attributes", {}).get("TEXCOORD_0", -1) < len(accessors)
-                for mesh in meshes for p in mesh.get("primitives", [])
-            ):
-                return False
-            return any(
-                isinstance(m.get("pbrMetallicRoughness", {}).get("baseColorTexture", {}).get("index"), int)
-                for m in materials
-            )
+            # A texture merely listed in glTF is not proof that any rendered mesh uses it.
+            for mesh in meshes:
+                for primitive in mesh.get("primitives", []):
+                    attrs = primitive.get("attributes", {})
+                    pos = attrs.get("POSITION")
+                    uv = attrs.get("TEXCOORD_0")
+                    mat_id = primitive.get("material")
+                    if not all(isinstance(k, int) for k in (pos, uv, mat_id)):
+                        continue
+                    if not (0 <= pos < len(accessors) and 0 <= uv < len(accessors)
+                            and 0 <= mat_id < len(materials)):
+                        continue
+                    if accessors[pos].get("count", 0) < 3:
+                        continue
+                    material = materials[mat_id]
+                    tex_id = material.get("pbrMetallicRoughness", {}).get("baseColorTexture", {}).get("index")
+                    if not isinstance(tex_id, int) or not 0 <= tex_id < len(textures):
+                        continue
+                    tex = textures[tex_id]
+                    source = tex.get("source")
+                    if source is None:
+                        source = tex.get("extensions", {}).get("EXT_texture_webp", {}).get("source")
+                    if isinstance(source, int) and 0 <= source < len(images):
+                        image = images[source]
+                        if isinstance(image.get("bufferView"), int) or str(image.get("uri", "")).startswith("data:"):
+                            return True
+            return False
     except (OSError, ValueError, KeyError, TypeError, IndexError, struct.error):
         return False
 

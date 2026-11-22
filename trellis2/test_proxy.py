@@ -86,3 +86,20 @@ def test_quality_defaults_match_balanced_preset():
     assert srv.MODEL_RESOLUTION == "1024"
     assert srv.OUTPUT_FACES == 200000
     assert srv.OUTPUT_TEXTURE_SIZE == 2048
+
+def test_unbound_pbr_texture_does_not_pass_as_textured_mesh(tmp_path):
+    source = glb()
+    old_size = struct.unpack_from("<I", source, 12)[0]
+    j = json.loads(source[20:20+old_size])
+    j["materials"].append({"pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1]}})
+    for mesh in j["meshes"]:
+        for prim in mesh["primitives"]:
+            prim["material"] = len(j["materials"]) - 1
+    encoded = json.dumps(j,separators=(",",":")).encode()
+    encoded += b" " * (-len(encoded) % 4)
+    bin_chunk = source[20+old_size:]
+    modified = (struct.pack("<III",0x46546c67,2,20+len(encoded)+len(bin_chunk))
+                + struct.pack("<II",len(encoded),0x4e4f534a)+encoded+bin_chunk)
+    target = tmp_path / "texture_present_but_unused.glb"
+    target.write_bytes(modified)
+    assert not srv.validate_glb(target)
