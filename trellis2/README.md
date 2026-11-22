@@ -22,3 +22,7 @@ Sunucu: `POST /api/jobs` (multipart `image`), `GET /api/jobs/{id}`, `GET /api/jo
 Yeni Forge HTML'de **3D Model** bölümüne gir, **TRELLIS.2 kaynak resmi** alanından PNG/JPG/WEBP seç ve **TRELLIS.2 ile gerçek 3D üret** düğmesine bas. Varsayılan yol doğrudan resmî `microsoft/TRELLIS.2` Gradio API'sidir; özel HTTPS proxy adresi/anahtarı **gerektirmez**. Gradio JS istemcisi jsDelivr üzerinden yüklenir, **internet şarttır**. Ücretsiz ZeroGPU kotası, Hugging Face oturumu veya tarayıcı CORS politikası yüzünden engellenebilir. Gerçek üretim testi olmadan başarı garantisi yoktur.
 
 **Özel sunucu** alanına URL girilirse önceki güvenli proxy yolu kullanılmaya devam edilir; alan boşsa doğrudan yol seçilir. Önceki V14.1 GPU/CPU/animasyon ve eski GLB import davranışı korunmuştur.
+
+## Gerçek bağlantı testi (GPU kullanmaz)
+
+`trellis2/test_live_connection.py`, GitHub Actions üzerinde Forge HTML'nin kullandığı **gerçek jsDelivr Gradio modülünü** indirmeyi ve `microsoft/TRELLIS.2` API'sine bağlanmayı dener. `test-sonuclari/trellis2/gercek_api_baglanti.json` dosyasına sonucu yazar. Dış hizmet erişilemezse ana regresyon testini düşürmez, fakat test sonucu hatadır. **Bu test hiçbir 3D üretimi başlatmaz; resmi Space'te GPU testinde Generate -> Error, Extract -> Empty value görüldü.** API bağlantısı başarılı olsa da 3D üretim hazır demek değildir.

@@ -34,6 +34,9 @@ jobs:
       - run: python -u test/test_trellis_glb.py
       - run: python -m trellis2.test_browser
       - run: python -m trellis2.test_direct_client
+      - name: Canli Gradio CDN ve resmi API baglanti denetimi (GPU kullanmaz)
+        continue-on-error: true
+        run: python -m trellis2.test_live_connection
       - run: python -m py_compile trellis2/server.py
       - name: Kaydet - sentetik GLB ve üç görünüş (gerçek TRELLIS üretimi değil)
         if: always()
