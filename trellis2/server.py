@@ -53,7 +53,7 @@ def set_state(id: str, status: str, message: str, glb: str | None = None) -> Non
 def run_job(id: str, image_path: Path, folder: Path) -> None:
     try:
         set_state(id, "running", "Hugging Face bağlantısı kuruluyor")
-        client = Client(SPACE, hf_token=HF_TOKEN)
+        client = Client(SPACE, token=HF_TOKEN, verbose=False)
         # Keep one Gradio Client/session for generation and export: gr.State holds the latent.
         client.predict(api_name="/start_session")
         set_state(id, "running", "Resim hazırlanıyor")
