@@ -42,3 +42,10 @@
 - Başarısız gerçek Generate denemesi resmî arayüzde kaydedildi. Çalışmayan TRELLIS servisini “tamamlandı” göstermek yasaktır.
 
 **Kural:** Üçüncü taraf API erişim durumunu, gerçek GPU üretimini ve statik GLB okuyucu testlerini birbirine karıştırma.
+
+## Canlı SF3D gerçek GPU denetimi — sonuç (22.11.2026)
+
+- Resmî Stable Fast 3D demosunda örnek otter karakterinden dokulu GLB önizlemesi ve indirme bağlantısı gözlendi.
+- Forge içinden ilk doğrudan API denemesi `/run_button: An error occurred` döndürdü. Araştırmada resmî Gradio girişinde ilk isimsiz Button değerinin `"Run"` olduğu ve Forge'un eski çağrısının bunu göndermediği bulundu.
+- Sıralı `["Run", image, null, 0.85, "None", -1, 1024]` çağrısından sonra resmî API'nin gerçek cevabı: **`You have exceeded your ZeroGPU quota (60s requested vs. 53s left)`**. Hata kota kaynaklıdır; mesh/GLB oluşmadı. UI demo başarısı Forge uçtan uca başarısı değildir.
+- Kotayı tüketen otomatik GPU testleri normal push işlerinden çıkarıldı; test yalnız seçilen manuel workflow'dan başlatılır. Ücretsiz Hugging Face hesabına ait token girilmesi desteklenir, fakat kota artışı garanti edilmez.

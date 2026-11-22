@@ -8,6 +8,12 @@ on:
       - test/test_trellis_glb.py
       - .github/workflows/trellis2-test.yml
   workflow_dispatch:
+    inputs:
+      run_real_sf3d:
+        description: 'Run one LIVE Stable Fast 3D GPU attempt (uses ZeroGPU quota)'
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: read
 jobs:
@@ -40,8 +46,8 @@ jobs:
       - name: Alternatif 3D motorlari canlı API taramasi (GPU kullanmaz)
         continue-on-error: true
         run: python -m trellis2.probe_alternatives
-      - name: Gercek Stable Fast 3D GPU uretim testi — sonuc negatif olabilir
-        continue-on-error: true
+      - name: Gercek Stable Fast 3D GPU testi (sadece elle acilinca)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_real_sf3d }}
         timeout-minutes: 6
         run: python -u trellis2/test_live_sf3d.py
       - run: python -m py_compile trellis2/server.py

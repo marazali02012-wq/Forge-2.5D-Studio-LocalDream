@@ -4401,7 +4401,7 @@ self.onmessage = async ev => {
   const HF_SPACE = "microsoft/TRELLIS.2";
   const SF3D_SPACE = "stabilityai/stable-fast-3d";
   const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "", generating: false, mixer: null, animationFrame: 0, resizeHandler: null };
-  let view, statusEl, proxyEl, engineEl, sourceFileEl, generateBtn, diagnosticBtn, fallbackLink, originalHost, controlsEl;
+  let view, statusEl, proxyEl, engineEl, hfTokenEl, sourceFileEl, generateBtn, diagnosticBtn, fallbackLink, originalHost, controlsEl;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   function status(msg, bad = false) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = bad ? "#ffb49e" : "#a7ebd0"; }
@@ -4642,7 +4642,13 @@ self.onmessage = async ev => {
     try { library = await import(GRADIO_JS_URL); }
     catch (err) { throw Error("Gradio istemcisi yüklenemedi (internet/CDN): " + String(err?.message || err)); }
     if (!library.Client?.connect || !library.handle_file) throw Error("Gradio istemcisi uyumsuz; API başlatılamıyor");
-    const app = await library.Client.connect(space);
+    // User may optionally use their own Hugging Face quota. Token is never
+    // saved to HTML/localStorage or sent to our custom proxy.
+    const hfToken = hfTokenEl?.value?.trim() || "";
+    if (hfToken && !/^hf_[a-zA-Z0-9]{12,}$/.test(hfToken)) {
+      throw Error("Hugging Face token biçimi geçersiz; hf_ ile başlamalı");
+    }
+    const app = await library.Client.connect(space, hfToken ? { token: hfToken } : undefined);
     return {app, handle_file:library.handle_file};
   }
   async function diagnoseOfficial() {
@@ -4791,11 +4797,16 @@ self.onmessage = async ev => {
       }
     } catch (e) {
       const msg = String(e?.message || e);
-      const hint = /quota|zero.?gpu|rate.?limit|too many|gpu|429/i.test(msg)
-        ? " Ücretsiz GPU sırası veya kotası dolu olabilir."
-        : /failed to fetch|network|cors/i.test(msg)
-          ? " Bağlantı veya tarayıcı CORS engelini kontrol edin." : "";
-      status((engineEl.value === "sf3d" ? "Stable Fast 3D" : "TRELLIS.2") + " tamamlanamadı: " + msg.slice(0, 280) + hint, true);
+      const quota = msg.match(/(\d+)s requested vs\. (\d+)s left/i);
+      const hint = quota
+        ? " Ücretsiz GPU kotası yetersiz: işlem " + quota[1] + " sn, kalan " + quota[2]
+          + " sn. Kotanın yenilenmesini bekleyin veya kendi HF hesabınızın tokenıyla deneyin."
+        : /quota|zero.?gpu|rate.?limit|too many|gpu|429/i.test(msg)
+          ? " Ücretsiz GPU kotası veya sırası engel olabilir."
+          : /failed to fetch|network|cors/i.test(msg)
+            ? " Bağlantı veya tarayıcı CORS engelini kontrol edin." : "";
+      status((engineEl.value === "sf3d" ? "Stable Fast 3D" : "TRELLIS.2") + " tamamlanamadı: "
+        + (quota ? "GPU kotası engeli." : msg.slice(0, 280)) + hint, true);
     } finally {
       state.generating = false;
       if (generateBtn) generateBtn.disabled = false;
@@ -4839,6 +4850,26 @@ self.onmessage = async ev => {
         : "TRELLIS.2: resmî GPU üretimi hata verdi; bu motor deneysel.");
     });
     engineLabel.appendChild(engineEl);
+    const hfDetails = document.createElement("details");
+    hfDetails.className = "acc";
+    const hfSummary = document.createElement("summary");
+    hfSummary.textContent = "Ücretsiz GPU kotası için HF hesabı (isteğe bağlı)";
+    const hfLabel = document.createElement("label");
+    hfLabel.textContent = "Hugging Face erişim tokenı — yalnızca bu oturum; kaydedilmez";
+    hfTokenEl = document.createElement("input");
+    hfTokenEl.id = "sf3d-hf-token";
+    hfTokenEl.type = "password";
+    hfTokenEl.autocomplete = "off";
+    hfTokenEl.placeholder = "hf_…";
+    hfTokenEl.style.cssText = "width:100%;box-sizing:border-box";
+    hfLabel.appendChild(hfTokenEl);
+    const hfLink = document.createElement("a");
+    hfLink.href = "https://huggingface.co/settings/tokens";
+    hfLink.target = "_blank";
+    hfLink.rel = "noopener noreferrer";
+    hfLink.textContent = "Hugging Face hesabında token oluştur";
+    hfLink.style.cssText = "display:inline-block;font-size:12px;color:#b3e1ff;text-decoration:underline";
+    hfDetails.append(hfSummary,hfLabel,hfLink);
     const advanced = document.createElement("details");
     advanced.className = "acc";
     const summary = document.createElement("summary");
@@ -4859,7 +4890,7 @@ self.onmessage = async ev => {
     fallbackLink.style.cssText = "display:inline-block;margin-top:5px;font-size:12px;color:#b3e1ff;text-decoration:underline";
     statusEl = document.createElement("p"); statusEl.id = "trellis2-status"; statusEl.setAttribute("role", "status"); statusEl.style.cssText = "font-size:12px;overflow-wrap:anywhere";
     advanced.append(summary, label);
-    area.append(engineLabel, fileLabel, btn, diagnosticBtn, fallbackLink, advanced, statusEl);
+    area.append(engineLabel, fileLabel, btn, diagnosticBtn, fallbackLink, hfDetails, advanced, statusEl);
     const ctrl = model.querySelector(".col-ctl");
     // Keep the real 3D action visible beside the source information, not below every setting.
     const sourceLine = ctrl?.querySelector("#s3-srcline");

@@ -44,3 +44,11 @@ Yeni Forge HTML'de **3D Model** bölümüne gir, **TRELLIS.2 kaynak resmi** alan
 ## Gradio `/run_button` kök neden onarımı
 
 Resmî Stable Fast 3D Gradio `/config` sırası: `[run_btn, input_image, background_state, foreground_ratio, remesh_option, vertex_count, texture_size]`. İlk `run_btn` bir **isimsiz Button** girişidir; JS adlı nesneyle yapılan çağrıda bu giriş eksikti ve `run_button` fonksiyonunda `"Run"` dalı tetiklenmiyordu. Onarım: sıralı parametre dizisi, ilk değer `"Run"`, devlet parametresi `null` (oturum sunucu durumunu kendisi taşır). Bu değişiklikten sonraki canlı üretim testi ayrıca doğrulanmalıdır.
+
+## Doğrulanmış 60 saniye kotası ve ücretsiz hesap seçeneği
+
+Gerçek Forge API çağrısında parametre sırası onarıldıktan sonra sunucu hatası **`You have exceeded your ZeroGPU quota (60s requested vs. 53s left)`** olarak döndü. Bu, doğru `/run_button` yoluna ulaşıldığını ancak 22 Kasım 2026 canlı çalışmasında GPU kotasının yetersiz olduğunu kanıtlar. Bu sonucu başarılı GLB diye göstermiyoruz.
+
+Yeni 3D Model bölümünde isteğe bağlı **Hugging Face tokenı** alanı vardır. Kullanıcı kendi ücretsiz hesabının tokenını doğrudan Hugging Face'e iletir; HTML'ye gömülmez, localStorage'a yazılmaz ve Forge proxy'ye yollanmaz. Token daha fazla ücretsiz kota sağlayabilir, **garanti değildir**. Kullanıcıdan tokenı sohbet içine yazması istenmez.
+
+Önemli: `trellis2/test_live_sf3d.py` artık her GitHub push'unda GPU kotasını tüketmez. Yalnız **elle başlatılan** workflow'da `run_real_sf3d=true` seçilirse bir gerçek test yapılır; başarısızlık kırmızı test olarak görünür. Normal CI yalnız mock + gerçek API erişim (GPU'suz) denetimi yapar.
