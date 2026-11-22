@@ -7,7 +7,7 @@
   const GRADIO_JS_URL = "https://cdn.jsdelivr.net/npm/@gradio/client@2.7.0/dist/index.min.js";
   const HF_SPACE = "microsoft/TRELLIS.2";
   const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "", generating: false, mixer: null, animationFrame: 0, resizeHandler: null };
-  let view, statusEl, proxyEl, sourceFileEl, generateBtn, originalHost, controlsEl;
+  let view, statusEl, proxyEl, sourceFileEl, generateBtn, diagnosticBtn, originalHost, controlsEl;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   function status(msg, bad = false) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = bad ? "#ffb49e" : "#a7ebd0"; }
@@ -189,7 +189,7 @@
   function safeProxy() {
     const s = proxyEl.value.trim().replace(/\/+$/, "");
     if (!/^https:\/\//i.test(s) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(s)) throw Error("Sunucu HTTPS olmalı (yerel test için localhost HTTP kabul edilir)");
-    try { localStorage.setItem("forge-trellis2-proxy-url", s); } catch (_) { /* file:// private mode */ }
+    // Do not persist stale or invalid proxy addresses across app sessions.
     return s;
   }
   async function request(path, opts = {}) {
@@ -243,10 +243,36 @@
     if (!file) throw Error("TRELLIS.2 GLB dosyası döndürmedi; GPU üretimi başarısız olabilir");
     return file.url || file.path;
   }
+  async function connectOfficial() {
+    let library;
+    try { library = await import(GRADIO_JS_URL); }
+    catch (err) { throw Error("Gradio istemcisi yüklenemedi (internet/CDN): " + String(err?.message || err)); }
+    if (!library.Client?.connect || !library.handle_file) throw Error("Gradio istemcisi uyumsuz; API başlatılamıyor");
+    const app = await library.Client.connect(HF_SPACE);
+    return {app, handle_file:library.handle_file};
+  }
+  async function diagnoseOfficial() {
+    if (state.generating) return;
+    diagnosticBtn.disabled = true;
+    try {
+      status("Resmî TRELLIS.2 bağlantısı ve API kontrol ediliyor; GPU kullanılmaz…");
+      const {app} = await connectOfficial();
+      const api = await app.view_api();
+      const names = Object.keys(api?.named_endpoints || {});
+      const required = ["/start_session", "/preprocess_image", "/image_to_3d", "/extract_glb"];
+      const missing = required.filter(endpoint => !names.includes(endpoint));
+      if (missing.length) throw Error("Resmî API değişmiş; eksik: " + missing.join(", "));
+      status("API bağlantısı doğrulandı. Üretim/ZeroGPU kotası test edilmedi.");
+    } catch (err) {
+      const raw = String(err?.message || err);
+      status("Bağlantı başarısız: " + raw.slice(0, 300) + (/failed to fetch|network|cors/i.test(raw) ? " Ağ veya CORS engeli olabilir." : ""), true);
+    } finally {
+      diagnosticBtn.disabled = false;
+    }
+  }
   async function produceDirect(image) {
     status("Resmî TRELLIS.2 ZeroGPU sunucusuna bağlanılıyor…");
-    const { Client, handle_file } = await import(GRADIO_JS_URL);
-    const app = await Client.connect(HF_SPACE);
+    const {app, handle_file} = await connectOfficial();
     await app.predict("/start_session", {});
     status("Kaynak resim hazırlanıyor…");
     const processed = await app.predict("/preprocess_image", {input: handle_file(image)});
@@ -306,7 +332,9 @@
     } catch (e) {
       const msg = String(e?.message || e);
       const hint = /quota|zero.?gpu|rate.?limit|too many|gpu|429/i.test(msg)
-        ? " Ücretsiz GPU sırası veya kotası dolu olabilir." : "";
+        ? " Ücretsiz GPU sırası veya kotası dolu olabilir."
+        : /failed to fetch|network|cors/i.test(msg)
+          ? " Bağlantı veya tarayıcı CORS engelini kontrol edin." : "";
       status("TRELLIS.2 tamamlanamadı: " + msg.slice(0, 280) + hint, true);
     } finally {
       state.generating = false;
@@ -335,13 +363,15 @@
     const summary = document.createElement("summary");
     summary.textContent = "Özel sunucu (isteğe bağlı)";
     const label = document.createElement("label"); label.textContent = "Yalnızca kendi TRELLIS.2 proxy sunucun varsa HTTPS adresini gir";
-    proxyEl = document.createElement("input"); proxyEl.id = "trellis2-proxy"; proxyEl.type = "url"; proxyEl.placeholder = "https://forge-trellis-proxy.onrender.com"; proxyEl.autocomplete = "url"; proxyEl.style.cssText = "width:100%;box-sizing:border-box"; try { proxyEl.value = localStorage.getItem("forge-trellis2-proxy-url") || ""; } catch (_) { proxyEl.value = ""; }
+    proxyEl = document.createElement("input"); proxyEl.id = "trellis2-proxy"; proxyEl.type = "url"; proxyEl.placeholder = "https://your-own-proxy.example"; proxyEl.autocomplete = "off"; proxyEl.style.cssText = "width:100%;box-sizing:border-box"; proxyEl.value = "";
     label.appendChild(proxyEl);
     const btn = makeButton("TRELLIS.2 ile gerçek 3D üret", produce); btn.id = "trellis2-run";
     generateBtn = btn;
+    diagnosticBtn = makeButton("API bağlantısını kontrol et", diagnoseOfficial);
+    diagnosticBtn.id = "trellis2-diagnostic";
     statusEl = document.createElement("p"); statusEl.id = "trellis2-status"; statusEl.setAttribute("role", "status"); statusEl.style.cssText = "font-size:12px;overflow-wrap:anywhere";
     advanced.append(summary, label);
-    area.append(fileLabel, btn, advanced, statusEl);
+    area.append(fileLabel, btn, diagnosticBtn, advanced, statusEl);
     const ctrl = model.querySelector(".col-ctl");
     // Keep the real 3D action visible beside the source information, not below every setting.
     const sourceLine = ctrl?.querySelector("#s3-srcline");
@@ -362,7 +392,7 @@
       e.target.value = "";
     }, true);
     $("s3-glb-close")?.addEventListener("click", () => { if (state.active) resetViewer(); });
-    status("Resmî TRELLIS.2 API kullanıma hazır. Resim seçip üretin. Ücretsiz GPU erişimi garanti değildir.");
+    status("Resmî TRELLIS.2 bağlantısı henüz doğrulanmadı. Kaynak resim seçin veya API bağlantısını kontrol edin.");
     window.ForgeTrellis2 = {inspectGLB, showGLB, resetViewer, get state() { return { active:state.active, hasImage:!!state.image, hasGLB:!!state.raw, generating:state.generating, job:state.job, cameraAspect:state.camera?.aspect ?? null, viewportAspect:state.renderer ? state.renderer.domElement.clientWidth / state.renderer.domElement.clientHeight : null, hasAnimation:!!state.mixer }; }};
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

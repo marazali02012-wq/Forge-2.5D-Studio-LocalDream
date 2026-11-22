@@ -18,7 +18,9 @@ export const handle_file = x => ({ file: x });
 export const Client = {connect: async(space) => {
   if(space !== 'microsoft/TRELLIS.2') throw Error('Incorrect Space');
   window.__hfCalls = [];
-  return {predict: async(endpoint, args) => {
+  return {view_api: async () => ({named_endpoints:Object.fromEntries(
+    ['/start_session','/preprocess_image','/image_to_3d','/extract_glb'].map(x=>[x,{}]))}),
+    predict: async(endpoint, args) => {
     window.__hfCalls.push({endpoint, args});
     if (window.__testRemoteError && endpoint === '/image_to_3d') throw Error('ZeroGPU quota exhausted');
     if(endpoint === '/start_session') return {data:[]};
@@ -49,6 +51,9 @@ with sync_playwright() as pw:
     page.evaluate("ForgeShell.go('model')")
     assert page.locator("#trellis2-image").count() == 1
     assert page.locator("#trellis2-proxy").input_value() == ""
+    page.locator("#trellis2-diagnostic").click()
+    page.wait_for_function("document.querySelector('#trellis2-status').textContent.includes('API bağlantısı doğrulandı')",timeout=30000)
+    assert "Üretim/ZeroGPU kotası test edilmedi" in page.locator("#trellis2-status").inner_text()
     page.locator("#trellis2-run").click()
     assert "kaynak resmi seçin" in page.locator("#trellis2-status").inner_text().lower()
     page.locator("#trellis2-image").set_input_files(str(image_path))
