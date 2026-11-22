@@ -37,6 +37,9 @@ jobs:
       - name: Canli Gradio CDN ve resmi API baglanti denetimi (GPU kullanmaz)
         continue-on-error: true
         run: python -m trellis2.test_live_connection
+      - name: Alternatif 3D motorlari canlı API taramasi (GPU kullanmaz)
+        continue-on-error: true
+        run: python -m trellis2.probe_alternatives
       - run: python -m py_compile trellis2/server.py
       - name: Kaydet - sentetik GLB ve üç görünüş (gerçek TRELLIS üretimi değil)
         if: always()
