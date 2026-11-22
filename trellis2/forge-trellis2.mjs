@@ -84,7 +84,9 @@
     view = document.createElement("div"); view.id = "trellis-live-view"; view.style.cssText = "width:100%;min-height:310px;height:min(62vh,440px);background:#0c1626;border:1px solid #3f5870;border-radius:10px;overflow:hidden;touch-action:none";
     originalHost.insertAdjacentElement("afterend", view);
     originalHost.style.display = "none";
-    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "low-power", preserveDrawingBuffer: true });
+    let renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "low-power", preserveDrawingBuffer: true }); }
+    catch (err) { resetViewer(); throw Error("WebGL2 önizleme açılamadı: " + (err?.message || err)); }
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -122,6 +124,20 @@
     controlsEl.append(makeButton("PNG kaydet", () => {
       draw(); renderer.domElement.toBlob(blob => { if (blob) downloadBlob(blob, "forge_3d_gorunum.png"); else status("PNG çıkarılamadı", true); }, "image/png");
     }));
+    controlsEl.append(makeButton("3 görünüş PNG", () => {
+      const original = camera.position.clone(), composite = document.createElement("canvas");
+      const w = renderer.domElement.width, h = renderer.domElement.height;
+      composite.width = w * 3; composite.height = h;
+      const ctx = composite.getContext("2d");
+      for (const [i, deg] of [0, 90, 180].entries()) {
+        angle(deg); renderer.render(scene, camera);
+        ctx.drawImage(renderer.domElement, w * i, 0, w, h);
+        ctx.fillStyle = "#ffffff"; ctx.font = Math.max(13, Math.floor(w / 20)) + "px sans-serif";
+        ctx.fillText(["Ön (+Z)", "Yan (+X)", "Arka (-Z)"][i], w * i + 10, 28);
+      }
+      camera.position.copy(original); controls.update(); draw();
+      composite.toBlob(blob => { if (blob) downloadBlob(blob, "forge_on_yan_arka.png"); }, "image/png");
+    }));
     controlsEl.append(makeButton("GLB indir", () => downloadBlob(new Blob([state.raw], {type:"model/gltf-binary"}), state.name)));
     controlsEl.append(makeButton("Forge karakterine dön", () => {resetViewer(); status("Forge önizlemesine dönüldü.");}));
     view.insertAdjacentElement("afterend", controlsEl);
@@ -137,7 +153,7 @@
   function safeProxy() {
     const s = proxyEl.value.trim().replace(/\/+$/, "");
     if (!/^https:\/\//i.test(s) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(s)) throw Error("Sunucu HTTPS olmalı (yerel test için localhost HTTP kabul edilir)");
-    localStorage.setItem("forge-trellis2-proxy-url", s);
+    try { localStorage.setItem("forge-trellis2-proxy-url", s); } catch (_) { /* file:// private mode */ }
     return s;
   }
   async function request(path, opts = {}) {
@@ -183,7 +199,7 @@
     if (!originalHost || !file || !model) return;
     const area = document.createElement("div"); area.id = "trellis2-controls"; area.style.cssText = "border-top:1px solid #3f5870;margin:8px 0;padding:8px 0";
     const label = document.createElement("label"); label.textContent = "TRELLIS.2 bağlantı sunucusu (HTTPS)";
-    proxyEl = document.createElement("input"); proxyEl.id = "trellis2-proxy"; proxyEl.type = "url"; proxyEl.placeholder = "https://forge-trellis-proxy.onrender.com"; proxyEl.autocomplete = "url"; proxyEl.style.cssText = "width:100%;box-sizing:border-box"; proxyEl.value = localStorage.getItem("forge-trellis2-proxy-url") || "";
+    proxyEl = document.createElement("input"); proxyEl.id = "trellis2-proxy"; proxyEl.type = "url"; proxyEl.placeholder = "https://forge-trellis-proxy.onrender.com"; proxyEl.autocomplete = "url"; proxyEl.style.cssText = "width:100%;box-sizing:border-box"; try { proxyEl.value = localStorage.getItem("forge-trellis2-proxy-url") || ""; } catch (_) { proxyEl.value = ""; }
     label.appendChild(proxyEl);
     const btn = makeButton("TRELLIS.2 ile gerçek 3D üret", produce); btn.id = "trellis2-run";
     statusEl = document.createElement("p"); statusEl.id = "trellis2-status"; statusEl.setAttribute("role", "status"); statusEl.style.cssText = "font-size:12px;overflow-wrap:anywhere";
