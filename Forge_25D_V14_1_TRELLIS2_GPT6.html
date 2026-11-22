@@ -4631,7 +4631,11 @@ self.onmessage = async ev => {
     const btn = makeButton("TRELLIS.2 ile gerçek 3D üret", produce); btn.id = "trellis2-run";
     statusEl = document.createElement("p"); statusEl.id = "trellis2-status"; statusEl.setAttribute("role", "status"); statusEl.style.cssText = "font-size:12px;overflow-wrap:anywhere";
     area.append(label, btn, statusEl);
-    const ctrl = model.querySelector(".col-ctl"); (ctrl || model).appendChild(area);
+    const ctrl = model.querySelector(".col-ctl");
+    // Keep the real 3D action visible beside the source information, not below every setting.
+    const sourceLine = ctrl?.querySelector("#s3-srcline");
+    if (sourceLine) sourceLine.insertAdjacentElement("afterend", area);
+    else (ctrl || model).appendChild(area);
     const capture = e => { const f = e.target.files?.[0]; if (f) state.image = f; };
     for (const id of ["importFile", "quickImageFile"]) $(id)?.addEventListener("change", capture, true);
     file.addEventListener("change", async e => {

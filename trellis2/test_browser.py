@@ -18,6 +18,7 @@ with sync_playwright() as pw:
     page.wait_for_function("!!window.ForgeV12 && !!window.ForgeTrellis2 && !!window.ForgeV11?.ready",timeout=60000)
     assert page.locator("#tabs .tab-btn").count()==6
     page.evaluate("ForgeShell.go('model')")
+    assert page.locator("#s3-srcline + #trellis2-controls").count()==1, "TRELLIS action must be near top of 3D controls"
     page.locator("#s3-verify-file").set_input_files(str(fixture))
     page.wait_for_function("window.ForgeTrellis2.state.active",timeout=90000)
     message=page.locator("#trellis2-status").inner_text()
