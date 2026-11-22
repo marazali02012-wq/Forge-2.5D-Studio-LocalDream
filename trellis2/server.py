@@ -22,6 +22,13 @@ if len(ACCESS_TOKEN) < 16:
     raise RuntimeError("FORGE_ACCESS_TOKEN must have at least 16 characters")
 HF_TOKEN = os.environ.get("HF_TOKEN") or None
 SPACE = "microsoft/TRELLIS.2"
+MODEL_RESOLUTION = os.environ.get("FORGE_TRELLIS_RESOLUTION", "1024")
+OUTPUT_FACES = int(os.environ.get("FORGE_TRELLIS_FACES", "200000"))
+OUTPUT_TEXTURE_SIZE = int(os.environ.get("FORGE_TRELLIS_TEXTURE", "2048"))
+if MODEL_RESOLUTION not in ("512", "1024", "1536"):
+    raise RuntimeError("FORGE_TRELLIS_RESOLUTION must be 512/1024/1536")
+if not 100000 <= OUTPUT_FACES <= 500000 or OUTPUT_TEXTURE_SIZE not in (1024, 2048, 3072, 4096):
+    raise RuntimeError("Unsupported TRELLIS quality preset")
 ORIGINS = ["null"] + [x.strip() for x in os.environ.get("FORGE_ALLOWED_ORIGINS", "").split(",") if x.strip()]
 app = FastAPI(title="Forge TRELLIS.2 proxy", docs_url=None, redoc_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["GET", "POST"], allow_headers=["X-Forge-Token", "Content-Type"])
@@ -114,14 +121,14 @@ def run_job(id: str, image_path: Path, folder: Path) -> None:
             raise RuntimeError("Hugging Face hazırlanmış resim döndürmedi")
         set_state(id, "running", "Gerçek 3D geometri ve PBR kaplama üretiliyor")
         client.predict(
-            handle_file(preprocessed), 0, "512",
+            handle_file(preprocessed), 0, MODEL_RESOLUTION,
             7.5, 0.7, 12, 5.0,
             7.5, 0.5, 12, 3.0,
             1.0, 0.0, 12, 3.0,
             api_name="/image_to_3d",
         )
         set_state(id, "running", "Kaplamalı GLB dışa aktarılıyor")
-        out = client.predict(100000, 1024, api_name="/extract_glb")
+        out = client.predict(OUTPUT_FACES, OUTPUT_TEXTURE_SIZE, api_name="/extract_glb")
         candidates = out if isinstance(out, (tuple, list)) else [out]
         path = next((Path(p) for p in candidates if isinstance(p, str) and Path(p).is_file()), None)
         if path is None:

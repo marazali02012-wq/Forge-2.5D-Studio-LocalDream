@@ -81,3 +81,8 @@ def test_parallel_generation_rejected(monkeypatch):
             folder=srv.jobs.pop(ident)["folder"]
         import shutil
         shutil.rmtree(folder,ignore_errors=True)
+
+def test_quality_defaults_match_balanced_preset():
+    assert srv.MODEL_RESOLUTION == "1024"
+    assert srv.OUTPUT_FACES == 200000
+    assert srv.OUTPUT_TEXTURE_SIZE == 2048

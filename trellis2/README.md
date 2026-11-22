@@ -14,3 +14,5 @@ Ortam değişkenleri:
 Sunucu: `POST /api/jobs` (multipart `image`), `GET /api/jobs/{id}`, `GET /api/jobs/{id}/glb`. İsteklerde `X-Forge-Token` gerekir. 90MB üstü GLB reddedilir.
 
 **Uyarı:** Hugging Face Space API değişebilir; `image_to_3d` ve `extract_glb` canlı GPU üretiminde henüz doğrulanmadı. Sunucu kullanıma açılmadan canlı test edilmelidir. Render servisi başlatılmadı; ücretli kaynak açılmadı.
+
+**Dengeli kalite (varsayılan):** TRELLIS çözünürlük `1024`, en fazla `200000` yüz, `2048` px kaplama. Bunlar canlı GPU üretiminde henüz doğrulanmadı. Ücretsiz GPU kotası yetersizse sunucuda `FORGE_TRELLIS_RESOLUTION=512`, `FORGE_TRELLIS_FACES=100000`, `FORGE_TRELLIS_TEXTURE=1024` seçilebilir. 1536 daha ağırdır; telefon hedefi için varsayılan değildir.
