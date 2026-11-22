@@ -6,6 +6,7 @@ import shutil
 import struct
 import tempfile
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -27,6 +28,28 @@ app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["GET", 
 pool = ThreadPoolExecutor(max_workers=1)
 jobs: dict[str, dict] = {}
 lock = threading.Lock()
+RESULT_TTL_SECONDS = 3600
+
+def cleanup_expired_jobs(now: float | None = None) -> int:
+    """Drop finished jobs and private input/GLB files after one hour."""
+    at = time.monotonic() if now is None else now
+    expired = []
+    with lock:
+        for job_id, job in list(jobs.items()):
+            completed = job.get("completed_at")
+            if completed is not None and at - completed >= RESULT_TTL_SECONDS:
+                expired.append(Path(job["folder"]))
+                del jobs[job_id]
+    for folder in expired:
+        shutil.rmtree(folder, ignore_errors=True)
+    return len(expired)
+
+def _cleanup_loop():
+    while True:
+        threading.Event().wait(300)
+        cleanup_expired_jobs()
+
+threading.Thread(target=_cleanup_loop, name="forge-trellis2-cleanup", daemon=True).start()
 
 def auth(x_forge_token: str | None) -> None:
     if not x_forge_token or not hmac.compare_digest(x_forge_token, ACCESS_TOKEN):
@@ -74,6 +97,8 @@ def validate_glb(path: Path) -> bool:
 def set_state(id: str, status: str, message: str, glb: str | None = None) -> None:
     with lock:
         jobs[id].update(status=status, message=message)
+        if status in ("done", "failed"):
+            jobs[id]["completed_at"] = time.monotonic()
         if glb:
             jobs[id]["glb"] = glb
 
@@ -142,7 +167,13 @@ async def create_job(image: UploadFile = File(...), x_forge_token: str | None = 
         raise HTTPException(415, detail="Geçersiz resim") from exc
     id = uuid.uuid4().hex
     with lock:
-        jobs[id] = {"status": "queued", "message": "Sıraya alındı", "glb": None}
+        # Recheck under the same lock as insertion: concurrent uploads may race.
+        busy = any(v["status"] in ("queued", "running") for v in jobs.values())
+        if not busy:
+            jobs[id] = {"status": "queued", "message": "Sıraya alındı", "glb": None, "folder": str(folder)}
+    if busy:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise HTTPException(429, detail="Bir üretim devam ediyor")
     pool.submit(run_job, id, original, folder)
     return {"id": id, "status": "queued"}
 

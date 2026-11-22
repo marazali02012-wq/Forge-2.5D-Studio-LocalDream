@@ -4397,7 +4397,7 @@ self.onmessage = async ev => {
   const $ = id => document.getElementById(id);
   const BASE = "https://cdn.jsdelivr.net/npm/three@0.181.0/";
   const MAX_GLB_BYTES = 90 * 1024 * 1024;
-  const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "" };
+  const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "", mixer: null, animationFrame: 0, resizeHandler: null };
   let view, statusEl, proxyEl, host, originalHost, controlsEl, dlBtn, pngBtn;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   function status(msg, bad = false) {
@@ -4425,6 +4425,11 @@ self.onmessage = async ev => {
   }
   function resetViewer() {
     state.active = false;
+    if (state.animationFrame) cancelAnimationFrame(state.animationFrame);
+    state.animationFrame = 0;
+    state.mixer?.stopAllAction();
+    if (state.resizeHandler) window.removeEventListener("resize", state.resizeHandler);
+    state.resizeHandler = null;
     if (state.controls) state.controls.dispose();
     if (state.scene) state.scene.traverse(o => {
       if (o.isMesh) {
@@ -4442,6 +4447,8 @@ self.onmessage = async ev => {
     if (controlsEl) { controlsEl.remove(); controlsEl = null; }
     if (originalHost) originalHost.style.display = "";
     state.scene = null; state.camera = null; state.controls = null; state.renderer = null; state.box = null;
+    state.mixer = null; state.raw = null; state.name = "";
+    const detail = $("s3-import-out"); if (detail) detail.textContent = "";
   }
   async function libraries() {
     if (state.runtime) return state.runtime;
@@ -4473,8 +4480,11 @@ self.onmessage = async ev => {
       }
     });
     if (!meshes) throw Error("GLB sahnesinde çizilebilir mesh yok");
+    // Validate bounds before replacing a working viewer.
+    const bounds = new THREE.Box3().setFromObject(gltf.scene);
+    if (bounds.isEmpty()) throw Error("Mesh sınır kutusu hesaplanamadı");
     resetViewer();
-    view = document.createElement("div"); view.id = "trellis-live-view"; view.style.cssText = "width:100%;min-height:310px;height:min(62vh,440px);background:#0c1626;border:1px solid #3f5870;border-radius:10px;overflow:hidden;touch-action:none";
+    view = document.createElement("div"); view.id = "trellis-live-view"; view.style.cssText = "width:100%;min-height:180px;height:clamp(200px,54vh,440px);background:#0c1626;border:1px solid #3f5870;border-radius:10px;overflow:hidden;touch-action:none";
     originalHost.insertAdjacentElement("afterend", view);
     originalHost.style.display = "none";
     let renderer;
@@ -4482,25 +4492,25 @@ self.onmessage = async ev => {
     catch (err) { resetViewer(); throw Error("WebGL2 önizleme açılamadı: " + (err?.message || err)); }
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.95;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-    renderer.setSize(Math.max(240, view.clientWidth), Math.max(310, view.clientHeight), false);
+    renderer.setSize(Math.max(240, view.clientWidth), Math.max(180, view.clientHeight), false);
     renderer.domElement.style.cssText = "width:100%;height:100%;display:block;touch-action:none";
     view.appendChild(renderer.domElement);
     const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0c1626);
     scene.add(gltf.scene);
-    scene.add(new THREE.HemisphereLight(0xe5f2ff, 0x3e4758, 2.2));
-    const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(3, 5, 7); scene.add(key);
-    const fill = new THREE.DirectionalLight(0x93b7ff, 1.1); fill.position.set(-4, 2, -3); scene.add(fill);
-    const bounds = new THREE.Box3().setFromObject(gltf.scene);
-    if (bounds.isEmpty()) throw Error("Mesh sınır kutusu hesaplanamadı");
+    scene.add(new THREE.HemisphereLight(0xe5f2ff, 0x3e4758, 1.0));
+    const key = new THREE.DirectionalLight(0xffffff, 1.8); key.position.set(3, 5, 7); scene.add(key);
+    const fill = new THREE.DirectionalLight(0x93b7ff, 0.65); fill.position.set(-4, 2, -3); scene.add(fill);
     const center = bounds.getCenter(new THREE.Vector3()), radius = Math.max(bounds.getSize(new THREE.Vector3()).length() * 0.6, 0.2);
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.01, Math.max(100, radius * 80));
+    const camera = new THREE.PerspectiveCamera(38, Math.max(240, view.clientWidth) / Math.max(180, view.clientHeight), 0.01, Math.max(100, radius * 80));
     camera.position.set(center.x, center.y + radius * 0.12, center.z + radius * 2.8);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.copy(center); controls.enablePan = false; controls.minDistance = radius * 0.7; controls.maxDistance = radius * 12;
     const draw = () => {
       if (!state.active) return;
-      const w = Math.max(240, view.clientWidth), h = Math.max(310, view.clientHeight);
+      const w = Math.max(240, view.clientWidth), h = Math.max(180, view.clientHeight);
+      if (Math.abs(camera.aspect - w / h) > 0.001) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
       if (renderer.domElement.width !== Math.round(w * renderer.getPixelRatio()) || renderer.domElement.height !== Math.round(h * renderer.getPixelRatio())) {
         renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
       }
@@ -4509,11 +4519,35 @@ self.onmessage = async ev => {
     state.raw = new Uint8Array(bytes); state.name = name || "trellis2_model.glb";
     state.active = true; state.scene = scene; state.renderer = renderer; state.camera = camera; state.controls = controls; state.box = { center, radius, draw };
     controls.addEventListener("change", draw);
+    state.resizeHandler = draw;
+    window.addEventListener("resize", draw, { passive: true });
     controls.update(); draw();
     controlsEl = document.createElement("div"); controlsEl.className = "row";
     controlsEl.style.cssText = "display:flex;flex-wrap:wrap;gap:5px;margin-top:6px";
     const angle = deg => { const rad = deg * Math.PI / 180; camera.position.set(center.x + Math.sin(rad) * radius * 2.8, center.y + radius * 0.12, center.z + Math.cos(rad) * radius * 2.8); controls.update(); draw(); };
     controlsEl.append(makeButton("Ön", () => angle(0)), makeButton("Yan", () => angle(90)), makeButton("Arka", () => angle(180)));
+    // Play animation clips embedded in imported GLB; never bind them to Forge's 26-bone rig.
+    const clips = (gltf.animations || []).filter(clip => clip.duration > 0);
+    if (clips.length) {
+      const mixer = new THREE.AnimationMixer(gltf.scene), clock = new THREE.Clock();
+      state.mixer = mixer;
+      mixer.clipAction(clips[0]).play();
+      let playing = true;
+      const playBtn = makeButton("Animasyonu durdur", () => {
+        playing = !playing;
+        playBtn.textContent = playing ? "Animasyonu durdur" : "Animasyonu oynat";
+      });
+      controlsEl.append(playBtn);
+      const tick = () => {
+        if (!state.active || state.mixer !== mixer) return;
+        const delta = Math.min(clock.getDelta(), 0.05);
+        if (playing && !document.hidden && !$("tab-model")?.hidden) {
+          mixer.update(delta); draw();
+        }
+        state.animationFrame = requestAnimationFrame(tick);
+      };
+      state.animationFrame = requestAnimationFrame(tick);
+    }
     controlsEl.append(makeButton("PNG kaydet", () => {
       draw(); renderer.domElement.toBlob(blob => { if (blob) downloadBlob(blob, "forge_3d_gorunum.png"); else status("PNG çıkarılamadı", true); }, "image/png");
     }));
@@ -4614,10 +4648,9 @@ self.onmessage = async ev => {
     }, true);
     $("s3-glb-close")?.addEventListener("click", () => { if (state.active) resetViewer(); });
     status("GLB açma hazır. TRELLIS.2 üretimi için çalışan ücretsiz API aracısı gerekiyor.");
-    window.ForgeTrellis2 = {inspectGLB, showGLB, resetViewer, get state() { return { active:state.active, hasImage:!!state.image, hasGLB:!!state.raw, job:state.job }; }};
+    window.ForgeTrellis2 = {inspectGLB, showGLB, resetViewer, get state() { return { active:state.active, hasImage:!!state.image, hasGLB:!!state.raw, job:state.job, cameraAspect:state.camera?.aspect ?? null, viewportAspect:state.renderer ? state.renderer.domElement.clientWidth / state.renderer.domElement.clientHeight : null, hasAnimation:!!state.mixer }; }};
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();
-
 </script>
 </body></html>

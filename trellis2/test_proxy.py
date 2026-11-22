@@ -53,3 +53,31 @@ def test_webp_glb_accepted(tmp_path):
 def test_truncated_glb_rejected(tmp_path):
     p=tmp_path/"a.glb";p.write_bytes(glb());assert srv.validate_glb(p)
     p.write_bytes(glb()[:-4]);assert not srv.validate_glb(p)
+
+def test_expired_glb_private_files_removed(tmp_path):
+    folder = tmp_path / "user_private_glb"
+    folder.mkdir()
+    (folder / "output.glb").write_bytes(glb())
+    job_id = "expiry_test_quality"
+    with srv.lock:
+        srv.jobs[job_id] = {"status":"done","message":"ok","glb":str(folder / "output.glb"),
+                            "folder":str(folder),"completed_at":100.}
+    assert srv.cleanup_expired_jobs(now=100.+srv.RESULT_TTL_SECONDS-1)==0
+    assert folder.exists()
+    assert srv.cleanup_expired_jobs(now=100.+srv.RESULT_TTL_SECONDS+1)>=1
+    assert not folder.exists() and job_id not in srv.jobs
+
+def test_parallel_generation_rejected(monkeypatch):
+    monkeypatch.setattr(srv.pool, "submit", lambda *args, **kwargs: None)
+    image = png()
+    a = client.post("/api/jobs",headers=HEADERS,files={"image":("one.png",image,"image/png")})
+    assert a.status_code==202
+    ident=a.json()["id"]
+    try:
+        b=client.post("/api/jobs",headers=HEADERS,files={"image":("two.png",image,"image/png")})
+        assert b.status_code==429
+    finally:
+        with srv.lock:
+            folder=srv.jobs.pop(ident)["folder"]
+        import shutil
+        shutil.rmtree(folder,ignore_errors=True)

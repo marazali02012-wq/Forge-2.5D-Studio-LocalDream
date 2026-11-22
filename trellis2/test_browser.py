@@ -53,8 +53,21 @@ with sync_playwright() as pw:
     webp_download.value.save_as(result_webp)
     assert result_webp.read_bytes()==webp_fixture.read_bytes()
     print("PASS EXT_texture_webp PBR GLB imported, exported losslessly")
+    # Test real animation clips and phone orientation changes without distorting the camera.
+    animated=output/"sentetik_animasyonlu.glb"
+    animated.write_bytes(glb(animated=True))
+    page.locator("#s3-verify-file").set_input_files(str(animated))
+    page.wait_for_function("ForgeTrellis2.state.active && ForgeTrellis2.state.hasAnimation",timeout=30000)
+    assert page.get_by_role("button",name="Animasyonu durdur").count()==1
+    page.get_by_role("button",name="Animasyonu durdur").click()
+    assert page.get_by_role("button",name="Animasyonu oynat").count()==1
+    page.get_by_role("button",name="Animasyonu oynat").click()
+    for size in [{"width":390,"height":844},{"width":800,"height":360},{"width":667,"height":375}]:
+        page.set_viewport_size(size)
+        page.wait_for_function("Math.abs(ForgeTrellis2.state.cameraAspect - ForgeTrellis2.state.viewportAspect) < 0.03",timeout=12000)
+    page.screenshot(path=str(output/"animasyonlu_yatay_ekran.png"))
     page.get_by_role("button",name="Forge karakterine dön",exact=True).click()
-    assert page.evaluate("!ForgeTrellis2.state.active")
+    assert page.evaluate("!ForgeTrellis2.state.active && !ForgeTrellis2.state.hasGLB && !ForgeTrellis2.state.hasAnimation")
     assert page.locator("#s3-view").count()==1
     assert not errors,errors
     print("PASS browser GLB 2 mesh + UV/PBR + front/side/back PNG + lossless GLB + fallback")

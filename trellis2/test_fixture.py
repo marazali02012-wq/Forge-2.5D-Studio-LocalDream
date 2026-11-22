@@ -4,7 +4,7 @@ import json
 import struct
 from PIL import Image
 
-def glb(webp=False):
+def glb(webp=False, animated=False):
     image = io.BytesIO()
     Image.new("RGBA", (4, 4), (220, 95, 35, 255)).save(image, "WEBP" if webp else "PNG")
     binary = bytearray()
@@ -48,6 +48,15 @@ def glb(webp=False):
     if webp:
         data["extensionsUsed"] = ["EXT_texture_webp"]
         data["extensionsRequired"] = ["EXT_texture_webp"]
+    if animated:
+        key_times = add(struct.pack("<2f", 0.0, 1.0))
+        key_moves = add(struct.pack("<6f", -0.5, 0, 0, 0.25, 0, 0))
+        data["accessors"].extend([
+            {"bufferView":key_times,"componentType":5126,"count":2,"type":"SCALAR","min":[0],"max":[1]},
+            {"bufferView":key_moves,"componentType":5126,"count":2,"type":"VEC3"}])
+        data["animations"] = [{"samplers":[{"input":4,"output":5,"interpolation":"LINEAR"}],
+                               "channels":[{"sampler":0,"target":{"node":1,"path":"translation"}}]}]
+        data["buffers"][0]["byteLength"] = len(binary)
     raw=json.dumps(data,separators=(",",":")).encode()
     raw+=b" "*(-len(raw)%4)
     return (struct.pack("<III",0x46546c67,2,12+8+len(raw)+8+len(binary)) +
