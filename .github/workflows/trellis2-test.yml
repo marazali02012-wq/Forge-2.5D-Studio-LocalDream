@@ -1,0 +1,25 @@
+name: TRELLIS2 GLB viewer regression
+on:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths:
+      - Forge_25D_V14_1_TRELLIS2_GPT6.html
+      - trellis2/**
+      - test/test_trellis_glb.py
+      - .github/workflows/trellis2-test.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  glb-viewer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install playwright==1.55.0 Pillow==11.3.0
+      - run: python -m playwright install --with-deps chromium
+      - run: python -u test/test_trellis_glb.py
+      - run: python -m py_compile trellis2/server.py
