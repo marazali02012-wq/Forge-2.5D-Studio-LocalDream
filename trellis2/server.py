@@ -33,16 +33,43 @@ def auth(x_forge_token: str | None) -> None:
         raise HTTPException(401, detail="Erişim anahtarı geçersiz")
 
 def validate_glb(path: Path) -> bool:
-    if not path.exists() or path.stat().st_size < 40 or path.stat().st_size > 90 * 1024 * 1024:
-        return False
-    with path.open("rb") as f:
-        head = f.read(20)
-        magic, version, length, json_length, json_type = struct.unpack("<IIIII", head)
-        if magic != 0x46546C67 or version != 2 or length != path.stat().st_size or json_type != 0x4E4F534A:
+    """Accept a real glTF 2 GLB with mesh geometry, UVs and a texture image."""
+    try:
+        size = path.stat().st_size
+        if size < 44 or size > 90 * 1024 * 1024:
             return False
-        import json
-        body = json.loads(f.read(json_length).decode("utf-8"))
-        return body.get("asset", {}).get("version") == "2.0" and bool(body.get("meshes"))
+        with path.open("rb") as f:
+            magic, version, length = struct.unpack("<III", f.read(12))
+            if magic != 0x46546C67 or version != 2 or length != size:
+                return False
+            json_length, chunk_type = struct.unpack("<II", f.read(8))
+            if chunk_type != 0x4E4F534A or json_length > 8 * 1024 * 1024:
+                return False
+            import json
+            body = json.loads(f.read(json_length).decode("utf-8"))
+            if body.get("asset", {}).get("version") != "2.0":
+                return False
+            accessors = body.get("accessors", [])
+            meshes = body.get("meshes", [])
+            images = body.get("images", [])
+            textures = body.get("textures", [])
+            materials = body.get("materials", [])
+            if not meshes or not images or not textures or not materials:
+                return False
+            if not any(
+                0 <= (p.get("attributes", {}).get("POSITION", -1)) < len(accessors)
+                and accessors[p["attributes"]["POSITION"]].get("count", 0) >= 3
+                and 0 <= p.get("attributes", {}).get("TEXCOORD_0", -1) < len(accessors)
+                for mesh in meshes for p in mesh.get("primitives", [])
+            ):
+                return False
+            return any(
+                isinstance(m.get("pbrMetallicRoughness", {}).get("baseColorTexture", {}).get("index"), int)
+                for m in materials
+            )
+    except (OSError, ValueError, KeyError, TypeError, IndexError, struct.error):
+        return False
+
 
 def set_state(id: str, status: str, message: str, glb: str | None = None) -> None:
     with lock:
