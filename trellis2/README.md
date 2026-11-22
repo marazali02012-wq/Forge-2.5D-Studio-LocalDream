@@ -40,3 +40,7 @@ Yeni Forge HTML'de **3D Model** bölümüne gir, **TRELLIS.2 kaynak resmi** alan
 ## 22 Kasım 2026 gerçek API testi sonucu
 
 **Dürüst durum:** GitHub CI üzerinde resmî şeffaf `otter_samurai.png` örneği Forge HTML'inden Stable Fast 3D API'sine yollandı. **Sonuç: `An error occurred`, GLB oluşmadı.** Resmî Gradio demo arayüzü aynı gün örnekten dokulu GLB üretebildi. Bu, resmî Gradio API'si ile web arayüzü arasında farklı davranış olduğunu gösterir. Tek başına URL veya hazır GLB testinin başarılı olması tam entegrasyon başarısı değildir. Yeni sürüm artık başarısız aşamanın adını gösterir; ayrıca aynı 3D Model bölümüne **Resmî 3D demosunu aç** bağlantısı eklendi. Web demosundan indirilen gerçek GLB, Forge'un mevcut GLB dosya alanına alınabilir. Bu yedek yol tam otomasyon değildir.
+
+## Gradio `/run_button` kök neden onarımı
+
+Resmî Stable Fast 3D Gradio `/config` sırası: `[run_btn, input_image, background_state, foreground_ratio, remesh_option, vertex_count, texture_size]`. İlk `run_btn` bir **isimsiz Button** girişidir; JS adlı nesneyle yapılan çağrıda bu giriş eksikti ve `run_button` fonksiyonunda `"Run"` dalı tetiklenmiyordu. Onarım: sıralı parametre dizisi, ilk değer `"Run"`, devlet parametresi `null` (oturum sunucu durumunu kendisi taşır). Bu değişiklikten sonraki canlı üretim testi ayrıca doğrulanmalıdır.

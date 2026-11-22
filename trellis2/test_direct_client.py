@@ -107,7 +107,9 @@ with sync_playwright() as pw:
     assert page.evaluate("ForgeTrellis2.state.engine === 'sf3d'")
     assert [x["endpoint"] for x in page.evaluate("window.__hfCalls")] == ["/requires_bg_remove", "/run_button"]
     stable_args=page.evaluate("window.__hfCalls.find(x=>x.endpoint==='/run_button').args")
-    assert stable_args["texture_size"]==1024 and stable_args["remesh_option"]=="None",stable_args
+    assert isinstance(stable_args,list),stable_args
+    assert stable_args[0] == "Run",stable_args
+    assert stable_args[3] == 0.85 and stable_args[4] == "None" and stable_args[6] == 1024,stable_args
     assert "2 mesh" in page.locator("#trellis2-status").inner_text()
     with page.expect_download(timeout=15000) as stable_download:
         page.get_by_role("button", name="GLB indir", exact=True).click()

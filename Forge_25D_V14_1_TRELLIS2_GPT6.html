@@ -4703,10 +4703,13 @@ self.onmessage = async ev => {
     status("Stable Fast 3D görsel hazır. Gerçek mesh ve UV üretimi isteniyor…");
     let output;
     try {
-      output = await app.predict("/run_button", {
-        input_image:handle_file(image), foreground_ratio:0.85,
-        remesh_option:"None", vertex_count:-1, texture_size:1024
-      });
+      // Official SF3D Gradio config has 7 ordered inputs. The first is an
+      // unnamed Button whose value MUST be "Run"; named-object API calls
+      // omitted it and made server run_button(...) return None (Error).
+      // Third input is server-owned gr.State; client uses same session_hash.
+      output = await app.predict("/run_button", [
+        "Run", handle_file(image), null, 0.85, "None", -1, 1024
+      ]);
     } catch (err) {
       throw Error("SF3D mesh üretimi (/run_button): " + String(err?.message || err)
         + ". Resmî web demosu çalışabilir; 'Resmî 3D demosunu aç' seçeneğini kullanabilirsiniz.");
