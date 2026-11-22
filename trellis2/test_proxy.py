@@ -45,6 +45,11 @@ def test_mock_gpu_unavailable(monkeypatch):
     id=client.post("/api/jobs",headers=HEADERS,files={"image":("fighter.png",png(),"image/png")}).json()["id"]
     assert wait(id)["status"]=="failed"
     assert client.get(f"/api/jobs/{id}/glb",headers=HEADERS).status_code==409
+def test_webp_glb_accepted(tmp_path):
+    p=tmp_path/"webp.glb"
+    p.write_bytes(glb(webp=True))
+    assert srv.validate_glb(p),"Official TRELLIS WebP extension must be accepted"
+
 def test_truncated_glb_rejected(tmp_path):
     p=tmp_path/"a.glb";p.write_bytes(glb());assert srv.validate_glb(p)
     p.write_bytes(glb()[:-4]);assert not srv.validate_glb(p)
