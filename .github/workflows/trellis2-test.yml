@@ -11,6 +11,16 @@ on:
 permissions:
   contents: read
 jobs:
+  proxy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r trellis2/requirements.txt pytest httpx
+      - run: python -m pytest -q trellis2/test_proxy.py
   glb-viewer:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
