@@ -65,6 +65,7 @@ with sync_playwright() as pw:
     assert page.locator("#trellis2-proxy").input_value() == ""
     assert page.locator("#trellis2-engine").input_value() == "sf3d"
     assert page.locator("#sf3d-hf-token").get_attribute("type") == "password"
+    page.locator("#sf3d-hf-token").evaluate("(el) => { el.closest('details').open = true; }")
     page.locator("#sf3d-hf-token").fill("hf_ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     page.locator("#trellis2-diagnostic").click()
     page.wait_for_function("document.querySelector('#trellis2-status').textContent.includes('API bağlantısı doğrulandı')",timeout=30000)
