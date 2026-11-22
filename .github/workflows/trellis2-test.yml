@@ -33,6 +33,7 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - run: python -u test/test_trellis_glb.py
       - run: python -m trellis2.test_browser
+      - run: python -m trellis2.test_direct_client
       - run: python -m py_compile trellis2/server.py
       - name: Kaydet - sentetik GLB ve üç görünüş (gerçek TRELLIS üretimi değil)
         if: always()

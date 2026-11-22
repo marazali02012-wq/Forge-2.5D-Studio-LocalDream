@@ -4397,8 +4397,10 @@ self.onmessage = async ev => {
   const $ = id => document.getElementById(id);
   const BASE = "https://cdn.jsdelivr.net/npm/three@0.181.0/";
   const MAX_GLB_BYTES = 90 * 1024 * 1024;
-  const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "", mixer: null, animationFrame: 0, resizeHandler: null };
-  let view, statusEl, proxyEl, host, originalHost, controlsEl, dlBtn, pngBtn;
+  const GRADIO_JS_URL = "https://cdn.jsdelivr.net/npm/@gradio/client@2.7.0/dist/index.min.js";
+  const HF_SPACE = "microsoft/TRELLIS.2";
+  const state = { image: null, raw: null, name: "", active: false, runtime: null, renderer: null, controls: null, scene: null, camera: null, box: null, token: "", job: "", source: "", generating: false, mixer: null, animationFrame: 0, resizeHandler: null };
+  let view, statusEl, proxyEl, sourceFileEl, generateBtn, originalHost, controlsEl;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   function status(msg, bad = false) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = bad ? "#ffb49e" : "#a7ebd0"; }
@@ -4597,40 +4599,142 @@ self.onmessage = async ev => {
     }
     return resp;
   }
+  async function limitedGLBDownload(url) {
+    const addr = new URL(url);
+    if (addr.protocol !== "https:" ||
+        !(addr.hostname === "huggingface.co" || addr.hostname.endsWith(".hf.space"))) {
+      throw Error("Beklenmeyen GLB indirme adresi: Hugging Face kaynağı doğrulanamadı");
+    }
+    const response = await fetch(addr.href, {cache: "no-store"});
+    if (!response.ok) throw Error("GLB indirme HTTP " + response.status);
+    const declared = Number(response.headers.get("content-length") || 0);
+    if (declared > MAX_GLB_BYTES) throw Error("GLB dosyası 90 MB üzeri; telefon belleği korunuyor");
+    const reader = response.body?.getReader();
+    if (!reader) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > MAX_GLB_BYTES) throw Error("GLB 90 MB sınırını aştı");
+      return bytes;
+    }
+    const chunks = []; let total = 0;
+    try {
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_GLB_BYTES) throw Error("GLB 90 MB sınırını aştı");
+        chunks.push(value);
+      }
+    } finally { try {await reader.cancel();} catch (_) {} }
+    const result = new Uint8Array(total); let offset = 0;
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
+    return result;
+  }
+  function returnedFile(data) {
+    const files = Array.isArray(data?.data) ? data.data : [];
+    const file = [files[1], files[0]].find(v => v && typeof v === "object" &&
+      (typeof v.url === "string" || typeof v.path === "string"));
+    if (!file) throw Error("TRELLIS.2 GLB dosyası döndürmedi; GPU üretimi başarısız olabilir");
+    return file.url || file.path;
+  }
+  async function produceDirect(image) {
+    status("Resmî TRELLIS.2 ZeroGPU sunucusuna bağlanılıyor…");
+    const { Client, handle_file } = await import(GRADIO_JS_URL);
+    const app = await Client.connect(HF_SPACE);
+    await app.predict("/start_session", {});
+    status("Kaynak resim hazırlanıyor…");
+    const processed = await app.predict("/preprocess_image", {input: handle_file(image)});
+    const result = processed?.data?.[0];
+    if (!result || typeof result !== "object" || !(result.url || result.path)) {
+      throw Error("TRELLIS.2 hazırlanmış resim döndürmedi");
+    }
+    status("Gerçek 3D geometri/kaplama üretiliyor; ZeroGPU kotası ve sıra beklenebilir…");
+    await app.predict("/image_to_3d", {
+      image: handle_file(result.url || result.path), seed: 0, resolution: "1024",
+      ss_guidance_strength: 7.5, ss_guidance_rescale: 0.7,
+      ss_sampling_steps: 12, ss_rescale_t: 5.0,
+      shape_slat_guidance_strength: 7.5, shape_slat_guidance_rescale: 0.5,
+      shape_slat_sampling_steps: 12, shape_slat_rescale_t: 3.0,
+      tex_slat_guidance_strength: 1.0, tex_slat_guidance_rescale: 0.0,
+      tex_slat_sampling_steps: 12, tex_slat_rescale_t: 3.0
+    });
+    status("Geometri tamamlandı; kaplamalı GLB dışa aktarılıyor…");
+    const extracted = await app.predict("/extract_glb", {decimation_target: 200000, texture_size: 2048});
+    const url = returnedFile(extracted);
+    status("Gerçek GLB indiriliyor ve doğrulanıyor…");
+    const bytes = await limitedGLBDownload(url);
+    await showGLB(bytes, "trellis2_gercek_model.glb");
+  }
   async function produce() {
+    if (state.generating) return;
     const image = state.image;
-    if (!image) { status("Önce Görsel bölümünden PNG/JPG yükleyin.", true); return; }
+    if (!image) { status("Önce TRELLIS.2 kaynak resmi seçin (PNG/JPG/WEBP).", true); return; }
+    state.generating = true;
+    if (generateBtn) generateBtn.disabled = true;
     try {
       if (!/^image\/(png|jpeg|webp)$/.test(image.type)) throw Error("PNG/JPG/WEBP dışında kaynak kabul edilmiyor");
       if (image.size > 10 * 1024 * 1024) throw Error("Resim 10 MB üzeri");
-      status("TRELLIS.2 isteği hazırlanıyor; ücretsiz GPU erişimi garanti değil.");
-      const fd = new FormData(); fd.append("image", image, image.name);
-      const result = await (await request("/api/jobs", {method:"POST",body:fd})).json();
-      if (!result.id) throw Error("Sunucu iş kimliği göndermedi");
-      state.job = result.id;
-      let job, polls = 0;
-      do {
-        await sleep(3500);
-        job = await (await request("/api/jobs/" + encodeURIComponent(result.id))).json();
-        status("TRELLIS.2: " + (job.message || job.status || "işleniyor"));
-        if (++polls > 180) throw Error("İstek zaman aşımına uğradı; sunucu durumunu kontrol edin");
-      } while (job.status === "queued" || job.status === "running");
-      if (job.status !== "done") throw Error(job.message || "Gerçek 3D üretimi tamamlanamadı");
-      const bytes = new Uint8Array(await (await request("/api/jobs/" + encodeURIComponent(result.id) + "/glb")).arrayBuffer());
-      await showGLB(bytes, "trellis2_" + result.id + ".glb");
-    } catch (e) { status("Gerçek TRELLIS.2 üretilemedi: " + (e?.message || String(e)), true); }
+      const customServer = proxyEl?.value?.trim();
+      if (!customServer) {
+        await produceDirect(image);
+      } else {
+        status("Özel TRELLIS.2 sunucusuna bağlanılıyor…");
+        const fd = new FormData(); fd.append("image", image, image.name);
+        const result = await (await request("/api/jobs", {method:"POST",body:fd})).json();
+        if (!result.id) throw Error("Sunucu iş kimliği göndermedi");
+        state.job = result.id;
+        let job, polls = 0;
+        do {
+          await sleep(3500);
+          job = await (await request("/api/jobs/" + encodeURIComponent(result.id))).json();
+          status("TRELLIS.2: " + (job.message || job.status || "işleniyor"));
+          if (++polls > 180) throw Error("İstek zaman aşımına uğradı; sunucu durumunu kontrol edin");
+        } while (job.status === "queued" || job.status === "running");
+        if (job.status !== "done") throw Error(job.message || "Gerçek 3D üretimi tamamlanamadı");
+        const response = await request("/api/jobs/" + encodeURIComponent(result.id) + "/glb");
+        const len = Number(response.headers.get("content-length") || 0);
+        if (len > MAX_GLB_BYTES) throw Error("GLB dosyası 90 MB sınırını aşıyor");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        await showGLB(bytes, "trellis2_" + result.id + ".glb");
+      }
+    } catch (e) {
+      const msg = String(e?.message || e);
+      const hint = /quota|zero.?gpu|rate.?limit|too many|gpu|429/i.test(msg)
+        ? " Ücretsiz GPU sırası veya kotası dolu olabilir." : "";
+      status("TRELLIS.2 tamamlanamadı: " + msg.slice(0, 280) + hint, true);
+    } finally {
+      state.generating = false;
+      if (generateBtn) generateBtn.disabled = false;
+    }
   }
   function init() {
     originalHost = $("pv3d-host-model");
     const file = $("s3-verify-file"), model = $("tab-model");
     if (!originalHost || !file || !model) return;
     const area = document.createElement("div"); area.id = "trellis2-controls"; area.style.cssText = "border-top:1px solid #3f5870;margin:8px 0;padding:8px 0";
-    const label = document.createElement("label"); label.textContent = "TRELLIS.2 bağlantı sunucusu (HTTPS)";
+    const fileLabel = document.createElement("label");
+    fileLabel.textContent = "TRELLIS.2 kaynak resmi (PNG/JPG/WEBP)";
+    sourceFileEl = document.createElement("input");
+    sourceFileEl.id = "trellis2-image";
+    sourceFileEl.type = "file";
+    sourceFileEl.accept = "image/png,image/jpeg,image/webp";
+    sourceFileEl.style.cssText = "width:100%;max-width:100%;box-sizing:border-box";
+    sourceFileEl.addEventListener("change", e => {
+      const f = e.target.files?.[0];
+      if (f) { state.image = f; status("Kaynak resim seçildi: " + f.name); }
+    });
+    fileLabel.appendChild(sourceFileEl);
+    const advanced = document.createElement("details");
+    advanced.className = "acc";
+    const summary = document.createElement("summary");
+    summary.textContent = "Özel sunucu (isteğe bağlı)";
+    const label = document.createElement("label"); label.textContent = "Yalnızca kendi TRELLIS.2 proxy sunucun varsa HTTPS adresini gir";
     proxyEl = document.createElement("input"); proxyEl.id = "trellis2-proxy"; proxyEl.type = "url"; proxyEl.placeholder = "https://forge-trellis-proxy.onrender.com"; proxyEl.autocomplete = "url"; proxyEl.style.cssText = "width:100%;box-sizing:border-box"; try { proxyEl.value = localStorage.getItem("forge-trellis2-proxy-url") || ""; } catch (_) { proxyEl.value = ""; }
     label.appendChild(proxyEl);
     const btn = makeButton("TRELLIS.2 ile gerçek 3D üret", produce); btn.id = "trellis2-run";
+    generateBtn = btn;
     statusEl = document.createElement("p"); statusEl.id = "trellis2-status"; statusEl.setAttribute("role", "status"); statusEl.style.cssText = "font-size:12px;overflow-wrap:anywhere";
-    area.append(label, btn, statusEl);
+    advanced.append(summary, label);
+    area.append(fileLabel, btn, advanced, statusEl);
     const ctrl = model.querySelector(".col-ctl");
     // Keep the real 3D action visible beside the source information, not below every setting.
     const sourceLine = ctrl?.querySelector("#s3-srcline");
@@ -4651,8 +4755,8 @@ self.onmessage = async ev => {
       e.target.value = "";
     }, true);
     $("s3-glb-close")?.addEventListener("click", () => { if (state.active) resetViewer(); });
-    status("GLB açma hazır. TRELLIS.2 üretimi için çalışan ücretsiz API aracısı gerekiyor.");
-    window.ForgeTrellis2 = {inspectGLB, showGLB, resetViewer, get state() { return { active:state.active, hasImage:!!state.image, hasGLB:!!state.raw, job:state.job, cameraAspect:state.camera?.aspect ?? null, viewportAspect:state.renderer ? state.renderer.domElement.clientWidth / state.renderer.domElement.clientHeight : null, hasAnimation:!!state.mixer }; }};
+    status("Resmî TRELLIS.2 API kullanıma hazır. Resim seçip üretin. Ücretsiz GPU erişimi garanti değildir.");
+    window.ForgeTrellis2 = {inspectGLB, showGLB, resetViewer, get state() { return { active:state.active, hasImage:!!state.image, hasGLB:!!state.raw, generating:state.generating, job:state.job, cameraAspect:state.camera?.aspect ?? null, viewportAspect:state.renderer ? state.renderer.domElement.clientWidth / state.renderer.domElement.clientHeight : null, hasAnimation:!!state.mixer }; }};
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();
