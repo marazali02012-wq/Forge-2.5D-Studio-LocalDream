@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as td:
             pw = im.width // 3
             first = im.crop((0, 0, pw, im.height))
             side = im.crop((pw, 0, 2*pw, im.height))
-            assert ImageChops.difference(first,side).getbbox(), "Front and side render must differ"
+            assert ImageChops.difference(first.convert("RGB"), side.convert("RGB")).getbbox(), "Front and side render must differ"
         print("PASS front/side/back PNG export",flush=True)
         page.get_by_role("button",name="Forge karakterine dön").last.click()
         assert not page.evaluate("ForgeTrellis2.state.active")
