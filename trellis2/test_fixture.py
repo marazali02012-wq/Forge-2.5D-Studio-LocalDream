@@ -4,9 +4,9 @@ import json
 import struct
 from PIL import Image
 
-def glb():
+def glb(webp=False):
     image = io.BytesIO()
-    Image.new("RGBA", (4, 4), (220, 95, 35, 255)).save(image, "PNG")
+    Image.new("RGBA", (4, 4), (220, 95, 35, 255)).save(image, "WEBP" if webp else "PNG")
     binary = bytearray()
     views = []
     def add(chunk, target=None):
@@ -35,8 +35,8 @@ def glb():
           {"pbrMetallicRoughness": {"baseColorTexture":{"index":0},"metallicFactor":0.0,"roughnessFactor":0.95}},
           {"alphaMode":"BLEND","doubleSided":True,"pbrMetallicRoughness":{"baseColorTexture":{"index":0},"metallicFactor":0.4,"roughnessFactor":0.5}}],
       "samplers": [{"magFilter":9729,"minFilter":9729,"wrapS":33071,"wrapT":33071}],
-      "textures": [{"sampler":0,"source":0}],
-      "images": [{"bufferView":texture,"mimeType":"image/png"}],
+      "textures": [({"sampler":0,"extensions":{"EXT_texture_webp":{"source":0}}} if webp else {"sampler":0,"source":0})],
+      "images": [{"bufferView":texture,"mimeType":"image/webp" if webp else "image/png"}],
       "buffers": [{"byteLength":len(binary)}],
       "bufferViews": views,
       "accessors": [
@@ -45,6 +45,9 @@ def glb():
           {"bufferView":uv,"componentType":5126,"count":3,"type":"VEC2"},
           {"bufferView":idx,"componentType":5123,"count":3,"type":"SCALAR"}]
     }
+    if webp:
+        data["extensionsUsed"] = ["EXT_texture_webp"]
+        data["extensionsRequired"] = ["EXT_texture_webp"]
     raw=json.dumps(data,separators=(",",":")).encode()
     raw+=b" "*(-len(raw)%4)
     return (struct.pack("<III",0x46546c67,2,12+8+len(raw)+8+len(binary)) +
