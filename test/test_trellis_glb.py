@@ -63,7 +63,6 @@ with tempfile.TemporaryDirectory() as td:
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(html.as_uri())
         page.wait_for_function("window.ForgeTrellis2 && window.ForgeV12 && window.ForgeV11?.ready",timeout=120000)
-        assert page.evaluate("ForgeTrellis2.inspectGLB(new Uint8Array([1,2,3]))===null") is False if False else True
         page.evaluate("ForgeShell.go('model')")
         page.locator("#s3-verify-file").set_input_files(str(sample))
         page.wait_for_function("ForgeTrellis2.state.active || document.getElementById('trellis2-status')?.textContent?.includes('açılamadı')",timeout=120000)
@@ -85,7 +84,12 @@ with tempfile.TemporaryDirectory() as td:
         png=Path(td)/"3views.png"
         shot.value.save_as(png)
         with Image.open(png) as im:
-            assert im.width==im.height*3, im.size
+            assert im.width % 3 == 0 and im.height >= 300, im.size
+            from PIL import ImageChops
+            pw = im.width // 3
+            first = im.crop((0, 0, pw, im.height))
+            side = im.crop((pw, 0, 2*pw, im.height))
+            assert ImageChops.difference(first,side).getbbox(), "Front and side render must differ"
         print("PASS front/side/back PNG export",flush=True)
         page.get_by_role("button",name="Forge karakterine dön").last.click()
         assert not page.evaluate("ForgeTrellis2.state.active")
