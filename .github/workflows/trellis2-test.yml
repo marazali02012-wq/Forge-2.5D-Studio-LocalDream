@@ -40,6 +40,10 @@ jobs:
       - name: Alternatif 3D motorlari canlı API taramasi (GPU kullanmaz)
         continue-on-error: true
         run: python -m trellis2.probe_alternatives
+      - name: Gercek Stable Fast 3D GPU uretim testi — sonuc negatif olabilir
+        continue-on-error: true
+        timeout-minutes: 6
+        run: python -u trellis2/test_live_sf3d.py
       - run: python -m py_compile trellis2/server.py
       - name: Kaydet - sentetik GLB ve üç görünüş (gerçek TRELLIS üretimi değil)
         if: always()
