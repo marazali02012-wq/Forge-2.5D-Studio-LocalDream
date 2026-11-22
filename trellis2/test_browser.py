@@ -41,6 +41,18 @@ with sync_playwright() as pw:
     im=Image.open(png).convert("RGBA")
     assert im.width == 3 * im.height or im.width > 2*im.height, im.size
     assert im.getbbox(), "blank screenshot"
+    # TRELLIS.2 official GLB export can contain EXT_texture_webp.
+    webp_fixture=output/"sentetik_coklu_mesh_uv_webp.glb"
+    webp_fixture.write_bytes(glb(webp=True))
+    page.locator("#s3-verify-file").set_input_files(str(webp_fixture))
+    page.wait_for_function("window.ForgeTrellis2.state.active && ForgeTrellis2.state.hasGLB")
+    assert "2 mesh" in page.locator("#trellis2-status").inner_text()
+    with page.expect_download(timeout=15000) as webp_download:
+        page.get_by_role("button",name="GLB indir",exact=True).click()
+    result_webp=output/"webp_yeniden_indirilen.glb"
+    webp_download.value.save_as(result_webp)
+    assert result_webp.read_bytes()==webp_fixture.read_bytes()
+    print("PASS EXT_texture_webp PBR GLB imported, exported losslessly")
     page.get_by_role("button",name="Forge karakterine dön",exact=True).click()
     assert page.evaluate("!ForgeTrellis2.state.active")
     assert page.locator("#s3-view").count()==1
