@@ -31,4 +31,6 @@ def generate(rgba,texture):
     vm=baked['vmapping']
     visual=trimesh.visual.texture.TextureVisuals(uv=baked['uvs'],material=trimesh.visual.material.PBRMaterial(baseColorTexture=tex,metallicFactor=0.,roughnessFactor=1.))
     m=trimesh.Trimesh(vertices=mesh.vertices[vm],faces=baked['indices'],vertex_normals=mesh.vertex_normals[vm],visual=visual,process=False)
+    # TripoSR native +X front, +Z up -> glTF +Z front, +Y up. Proper rotation (det=+1).
+    m.apply_transform(np.array([[0.,1.,0.,0.],[0.,0.,1.,0.],[1.,0.,0.,0.],[0.,0.,0.,1.]]))
     return m.export(file_type='glb')
