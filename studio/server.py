@@ -162,7 +162,8 @@ async def blender_api(request:Request,operation:str,target:int=5000):
 
 
 @app.post('/api/model/components')
-async def components(request:Request,index:int=-1):
+async def components(request:Request,index:int=-1,prune:bool=False):
+    if prune and index<0:raise HTTPException(400,'Açık parça seçimi gerekli.')
     if index < -1 or index > 4095:raise HTTPException(400,'Geçersiz parça.')
     if request.headers.get('content-type','').split(';')[0]!='model/gltf-binary':raise HTTPException(415,'GLB gerekli.')
     if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
@@ -174,11 +175,11 @@ async def components(request:Request,index:int=-1):
         try:
             from parts import component_operation
             raw=bytes(buf);j=check_embedded_model(raw)
-            result=await run_in_threadpool(component_operation,raw,j,None if index==-1 else index)
+            result=await run_in_threadpool(component_operation,raw,j,None if index==-1 else index,prune)
             if index==-1:return result
             check_embedded_model(result)
             if len(result)>MAX_GLB:raise ValueError('Output too large')
             return Response(result,media_type='model/gltf-binary')
         except Exception:
-            logging.exception('Component operation failed');raise HTTPException(400,'Tek, statik GLB gerekli. Kemik, animasyon ve çoklu mesh desteklenmiyor.')
+            logging.exception('Component operation failed');raise HTTPException(400,'Yalnızca tek statik mesh desteklenir. Temizleme için küçük, ana gövde dışı bir parça seçin.')
     finally:busy.release()
