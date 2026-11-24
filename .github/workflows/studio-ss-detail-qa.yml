@@ -1,0 +1,159 @@
+name: Forge Studio 256 grid and 2K texture quality benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-ss-detail-qa.yml]
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [characters, objects, nature]
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU runtime
+        run: |
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' omegaconf==2.3.0 pillow==10.4.0 einops==0.7.0 transformers==4.35.0 trimesh==4.5.3 'huggingface-hub<1' imageio rembg onnxruntime scikit-image==0.24.0 xatlas==0.0.9 moderngl==5.10.0 fastapi uvicorn playwright requests
+      - name: Install and verify software EGL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libegl-dev libgl1 libgl-dev libgl1-mesa-dri libegl-mesa0
+          python -c "import ctypes,moderngl; ctypes.CDLL('libEGL.so'); c=moderngl.create_standalone_context(backend='egl'); print('EGL_RENDERER',c.info['GL_RENDERER']); c.release()"
+      - name: Real inference across independent subject categories
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          mkdir -p r7-proof
+          git clone https://github.com/VAST-AI-Research/TripoSR.git studio/upstream-triposr
+          git -C studio/upstream-triposr checkout --detach 107cefdc244c39106fa830359024f6a2f1c78871
+          cat > studio/upstream-triposr/torchmcubes.py <<'PY'
+          import torch,numpy as np
+          from skimage.measure import marching_cubes as mc
+          def marching_cubes(volume,level):
+              v,f,_,_=mc(volume.detach().cpu().numpy(),level=level,gradient_direction='ascent',allow_degenerate=False)
+              return torch.from_numpy(v[:,::-1].copy()).float(),torch.from_numpy(f.copy().astype(np.int64))
+          PY
+          python -m playwright install chromium
+          export FORGE_PASSWORD=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+          export FORGE_REQUIRE_AUTH=1
+          cd studio
+          python -m uvicorn server:app --host 127.0.0.1 --port 7860 --workers 1 > ../r7-proof/server.log 2>&1 &
+          pid=$!
+          export FORGE_PID=$pid
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          cat > /tmp/r7-broad.py <<'PY'
+          import os,json,time,hashlib,struct,urllib.request,zipfile,io
+          from pathlib import Path
+          from PIL import Image
+          import requests
+          from playwright.sync_api import sync_playwright
+          out=Path('../r7-proof').resolve()
+          base='http://127.0.0.1:7860'
+          auth=('forge',os.environ['FORGE_PASSWORD'])
+          groups={'characters':['raccoon_wizard'],'objects':['chair1','stylized-rocks'],'nature':['animal_character_2']}
+          group=os.environ['GROUP']
+          report={'mock':False,'group':group,'results':[]}
+          try:
+              for _ in range(60):
+                  try:
+                      if requests.get(base+'/api/triposr/status',auth=auth,timeout=2).ok:break
+                  except requests.RequestException:pass
+                  time.sleep(1)
+              else:raise RuntimeError('API did not start')
+              assert requests.get(base).status_code==401
+              assert requests.post(base+'/api/triposr/generate?resolution=42',auth=auth,headers={'Content-Type':'image/png'},data=b'').status_code==400
+              with sync_playwright() as pw:
+                  browser=pw.chromium.launch(headless=True,args=['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+                  ctx=browser.new_context(viewport={'width':390,'height':844},http_credentials={'username':auth[0],'password':auth[1]},accept_downloads=True)
+                  for i,name in enumerate(groups[group]):
+                      item={'name':name,'ok':False}
+                      report['results'].append(item)
+                      try:
+                          source=out/(name+'.png')
+                          urllib.request.urlretrieve('https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/'+name+'.png',source)
+                          im=Image.open(source).convert('RGBA')
+                          assert im.getchannel('A').getextrema()[0]<255,'Reference has no alpha; no fake mask'
+                          page=ctx.new_page()
+                          errors=[]
+                          page.on('pageerror',lambda e:errors.append(str(e)))
+                          page.goto(base,wait_until='domcontentloaded')
+                          page.locator('#engine').select_option('cpu')
+                          resolution=256
+                          texture=2048
+                          page.locator('#meshResolution').select_option(str(resolution))
+                          page.locator('#quality').select_option(str(texture))
+                          page.locator('#imageInput').set_input_files(str(source))
+                          page.wait_for_function('!document.querySelector("#generate").disabled')
+                          start=time.monotonic()
+                          with page.expect_response(lambda r:'/api/triposr/generate?' in r.url,timeout=650000) as pending:page.locator('#generate').click()
+                          response=pending.value
+                          assert response.ok,(response.status,response.text()[:300])
+                          raw=response.body()
+                          qa=json.loads(response.headers['x-forge-qa'])
+                          assert 1<=len(qa['attempts'])<=3 and qa['best']['iou']>=0
+                          assert 'color' in qa and isinstance(qa['color']['applied'],bool)
+                          assert qa['atlas']['valid_pixels_unchanged'] and qa['atlas']['original_coverage']>0
+                          assert qa['geometry']['triangles']>0 and qa['geometry']['components']>0
+                          if qa['color']['applied']:assert qa['color']['mae_after'] < qa['color']['mae_before']
+                          assert qa['method']=='front_silhouette_multi_inference' and len({a['framing'] for a in qa['attempts']})==len(qa['attempts'])
+                          assert qa['best']['resolution']==resolution
+                          assert qa['best']['score']>=qa['attempts'][0].get('score',-1)-.0001
+                          item['qa']=qa
+                          print('QUALITY '+name+' '+json.dumps(qa),flush=True)
+                          page.wait_for_function('document.querySelector("#cancel").disabled',timeout=90000)
+                          assert not page.locator('#export').is_disabled(),page.locator('#status').inner_text()
+                          with page.expect_download(timeout=30000) as dl:page.locator('#export').click()
+                          dest=out/(name+'.glb');dl.value.save_as(dest)
+                          b=dest.read_bytes();assert raw==b and b[:4]==b'glTF'
+                          j=json.loads(b[20:20+struct.unpack_from('<I',b,12)[0]])
+                          assert any('TEXCOORD_0' in p['attributes'] for m in j['meshes'] for p in m['primitives'])
+                          assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j['materials'])
+                          texdef=j['images'][0];bv=j['bufferViews'][texdef['bufferView']];off=20+struct.unpack_from('<I',b,12)[0]+8+bv.get('byteOffset',0)
+                          tex=Image.open(io.BytesIO(b[off:off+bv['byteLength']]));assert tex.size==(2048,2048),tex.size
+                          item['actual_texture']=list(tex.size)
+                          item['faces']=sum(j['accessors'][p['indices']]['count']//3 for m in j['meshes'] for p in m['primitives'])
+                          assert not errors,errors
+                          page.locator('#front').click()
+                          page.screenshot(path=str(out/(name+'-browser.png')),full_page=True)
+                          for angle in ('front','side','back','leftView','topView'):
+                              page.locator('#'+angle).click()
+                              page.locator('#view').screenshot(path=str(out/(name+'-'+angle+'.png')))
+                          obj=requests.post(base+'/api/model/export-obj',auth=auth,headers={'Content-Type':'model/gltf-binary'},data=b,timeout=90)
+                          assert obj.ok,obj.text[:200]
+                          with zipfile.ZipFile(io.BytesIO(obj.content)) as z:
+                              assert 'Forge.obj' in z.namelist() and 'Forge.mtl' in z.namelist()
+                              assert any(x.endswith('.png') for x in z.namelist())
+                          item.update(ok=True,resolution=resolution,texture=texture,seconds=round(time.monotonic()-start,2),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+                          page.close()
+                      except Exception as e:
+                          item['error']=str(e)[:800]
+                      print('R7_RESULT '+json.dumps(item),flush=True)
+                  browser.close()
+          finally:
+              try:report['memory']=[x for x in (Path('/proc')/os.environ['FORGE_PID']/'status').read_text().splitlines() if x.startswith(('VmHWM:','VmRSS:'))]
+              except Exception:pass
+              report['success']=len(report['results'])==len(groups[group]) and all(x['ok'] for x in report['results']) and len({x['sha256'] for x in report['results']})==len(groups[group])
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print('R7_REPORT '+json.dumps(report),flush=True)
+          if not report['success']:raise SystemExit(1)
+          PY
+          python -u /tmp/r7-broad.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-ss-detail-${{ matrix.group }}
+          path: r7-proof/
