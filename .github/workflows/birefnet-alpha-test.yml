@@ -1,0 +1,93 @@
+name: BiRefNet mask alpha calibration
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/birefnet-alpha-test.yml]
+permissions:
+  contents: read
+jobs:
+  real-birefnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install exact Forge runtime
+        run: npm install --no-save --no-package-lock @huggingface/transformers@4.3.2 sharp@0.34.5
+      - name: Evaluate real model weights
+        run: |
+          mkdir -p birefnet-alpha-evidence
+          cat > ormbg-test.mjs <<'JS'
+          import {pipeline,env,RawImage} from '@huggingface/transformers';
+          import sharp from 'sharp';
+          import fs from 'node:fs/promises';
+          env.allowLocalModels=false;
+          const start=Date.now();
+          const segment=await pipeline('background-removal','onnx-community/BiRefNet_lite-ONNX',{dtype:'fp32',device:'cpu'});
+          const results=[];
+          for(const [name,source] of [['izci','test/izci.png'],['samurai','https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/otter_samurai.png'],['wizard','https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/raccoon_wizard.png'],['animal','https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/animal_character.png']]){
+            try {
+              let bytes=source;
+              if(source.startsWith('https:')){
+                const res=await fetch(source); if(!res.ok)throw Error('source HTTP '+res.status);
+                bytes=Buffer.from(await res.arrayBuffer());
+              }
+              const {data,info}=await sharp(bytes).resize(480,480,{fit:'inside'}).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+              const {width:w,height:h}=info;
+              const rgb=new Uint8ClampedArray(w*h*3);
+              let fg=0,bg=0;
+              for(let i=0;i<w*h;i++){
+                const a=data[i*4+3]/255,x=i%w,y=Math.floor(i/w);
+                if(a>=.5)fg++;else bg++;
+                const colors=((Math.floor(x/37)+Math.floor(y/31))%2)?[62,115,92]:[190,164,130];
+                for(let c=0;c<3;c++)rgb[3*i+c]=Math.round(data[4*i+c]*a+colors[c]*(1-a));
+              }
+              if(fg<100||bg<100)throw Error('Source lacks usable reference alpha');
+              const t=Date.now();
+              const output=await segment([new RawImage(rgb,w,h,3)]);
+              const im=Array.isArray(output)?output[0]:output;
+              if(im.channels!==4||im.width!==w||im.height!==h)throw Error('Invalid real output');
+              let tp=0,fp=0,fn=0,opaqueLost=0,opaque=0,mae=0;
+              for(let i=0;i<w*h;i++){
+                const a=data[4*i+3],b=im.data[4*i+3];
+                if(a>=128&&b>=128)tp++;else if(a<128&&b>=128)fp++;else if(a>=128)fn++;
+                if(a>=250){opaque++;if(b<128)opaqueLost++;}
+                mae+=Math.abs(a-b)/255;
+              }
+              await sharp(Buffer.from(rgb),{raw:{width:w,height:h,channels:3}}).png().toFile('birefnet-alpha-evidence/'+name+'-input.png');
+              await sharp(Buffer.from(im.data),{raw:{width:w,height:h,channels:4}}).png().toFile('birefnet-alpha-evidence/'+name+'-output.png');
+              await sharp(data,{raw:{width:w,height:h,channels:4}}).png().toFile('birefnet-alpha-evidence/'+name+'-reference.png');
+              const variants=[];
+              for(const threshold of [64,89,102,128]){
+                const remap=Buffer.from(im.data);
+                let hit=0,extra=0,miss=0,lost=0;
+                for(let i=0;i<w*h;i++){
+                  const a=data[4*i+3],b=im.data[4*i+3];
+                  const mapped=b<=threshold ? Math.round(b*128/threshold) : Math.round(128+(b-threshold)*127/(255-threshold));
+                  remap[4*i+3]=mapped;
+                  if(a>=128&&mapped>=128)hit++;else if(a<128&&mapped>=128)extra++;else if(a>=128)miss++;
+                  if(a>=250&&mapped<128)lost++;
+                }
+                variants.push({threshold,iou:hit/(hit+extra+miss),opaqueLoss:lost/Math.max(1,opaque)});
+                await sharp(remap,{raw:{width:w,height:h,channels:4}}).png().toFile('birefnet-alpha-evidence/'+name+'-alpha-'+threshold+'.png');
+              }
+              const result={name,variants,iou:tp/(tp+fp+fn),opaqueLoss:opaqueLost/Math.max(1,opaque),alphaMAE:mae/(w*h),inferenceMs:Date.now()-t};
+              results.push(result);console.log(JSON.stringify(result));
+            }catch(e){results.push({name,error:String(e)});console.error(name,String(e));}
+          }
+          await segment.dispose();
+          await fs.writeFile('birefnet-alpha-evidence/report.json',JSON.stringify({actualModel:'onnx-community/BiRefNet_lite-ONNX',dtype:'fp32',device:'cpu',totalMs:Date.now()-start,results},null,2));
+          const passing=[64,89,102,128].filter(t=>results.length===4&&results.every(r=>!r.error&&r.variants.some(v=>v.threshold===t&&v.iou>=.95&&v.opaqueLoss<=.01)));
+          console.log('COMMON_PASS_THRESHOLDS '+JSON.stringify(passing));
+          if(!passing.length)process.exitCode=1;
+          JS
+          node ormbg-test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: birefnet-alpha-evidence
+          path: birefnet-alpha-evidence/
+          if-no-files-found: warn
