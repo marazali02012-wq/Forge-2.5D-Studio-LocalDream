@@ -11,6 +11,7 @@ from tsr.system import TSR
 from tsr.utils import resize_foreground
 from tsr.bake_texture import bake_texture
 from quality import source_mask, compare, prefer
+from color_qa import calibrate
 model=None
 original=moderngl.create_context
 moderngl.create_context=lambda *a,**kw:original(*a,**dict(kw,backend='egl'))
@@ -53,7 +54,14 @@ def generate_checked(rgba,texture,resolution=96):
     # TripoSR native +X front, +Z up -> glTF +Z front, +Y up. Proper rotation (det=+1).
     m.apply_transform(np.array([[0.,1.,0.,0.],[0.,0.,1.,0.],[1.,0.,0.,0.],[0.,0.,0.,1.]]))
     if np.asarray(tex)[:,:,3].max()==0:raise ValueError('Empty texture')
-    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference')
+    color={'applied':False,'method':'bounded_global_color_gain','reason':'silhouette_warning'}
+    if not best['warning']:
+        try: color=calibrate(m,rgba)
+        except Exception as e:
+            import logging
+            logging.exception('Optional color calibration failed; original texture retained')
+            color={'applied':False,'method':'bounded_global_color_gain','reason':type(e).__name__}
+    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference',color=color)
 
 def generate(rgba,texture,resolution=96):
     return generate_checked(rgba,texture,resolution)[0]
