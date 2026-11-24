@@ -1,0 +1,110 @@
+name: Forge R23 real CPU inference verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r23-real-inference-test]
+    paths: [.github/workflows/forge-r23-real.yml]
+permissions:
+  contents: read
+jobs:
+  real-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU runtime
+        run: |
+          mkdir -p r23-proof
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' omegaconf==2.3.0 pillow==10.4.0 einops==0.7.0 transformers==4.35.0 trimesh==4.5.3 'huggingface-hub<1' imageio rembg onnxruntime scikit-image==0.24.0 xatlas==0.0.9 moderngl==5.10.0 fastapi uvicorn playwright
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libegl-dev libgl1 libgl-dev libgl1-mesa-dri libegl-mesa0
+          python -m playwright install --with-deps chromium
+      - name: Provision real weights and reference
+        run: |
+          git clone https://github.com/VAST-AI-Research/TripoSR.git studio/upstream-triposr
+          git -C studio/upstream-triposr checkout --detach 107cefdc244c39106fa830359024f6a2f1c78871
+          cat > studio/upstream-triposr/torchmcubes.py <<'PY'
+          import torch,numpy as np
+          from skimage.measure import marching_cubes as mc
+          def marching_cubes(volume,level):
+              v,f,_,_=mc(volume.detach().cpu().numpy(),level=level,gradient_direction='ascent',allow_degenerate=False)
+              return torch.from_numpy(v[:,::-1].copy()).float(),torch.from_numpy(f.copy().astype(np.int64))
+          PY
+          cd studio
+          python triposr_setup.py download
+          curl --fail --location --retry 2 --output ../r23-proof/chair1.png https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/chair1.png
+      - name: Real neural field and CPU fallback verification
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+        run: |
+          cd studio
+          cat > r23_verify.py <<'PY'
+          import json,time,hashlib,struct,traceback
+          from pathlib import Path
+          from PIL import Image
+          import numpy as np
+          import engine
+          from playwright.sync_api import sync_playwright
+          out=Path('../r23-proof').resolve()
+          report={'mock':False,'force_cpu_bake':True,'success':False,'ui':'repository test branch viewer, not current R23 HTML'}
+          try:
+              im=Image.open(out/'chair1.png').convert('RGBA')
+              assert im.getchannel('A').getextrema()[0]<255
+              # Deliberately fail EGL so the actual neural CPU baker must execute.
+              import tsr.bake_texture as bake
+              def force_fallback(*args,**kwargs):
+                  raise RuntimeError('Intentional EGL failure for CPU fallback verification')
+              bake.bake_texture=force_fallback
+              start=time.monotonic()
+              raw,qa=engine.generate_checked(im,512,96)
+              assert qa['bake_method']=='cpu_uv_raster'
+              assert raw[:4]==b'glTF' and struct.unpack_from('<I',raw,8)[0]==len(raw)
+              j=json.loads(raw[20:20+struct.unpack_from('<I',raw,12)[0]])
+              assert any('TEXCOORD_0' in p['attributes'] for m in j['meshes'] for p in m['primitives'])
+              assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j['materials'])
+              file=out/'chair1.glb';file.write_bytes(raw)
+              report.update(qa=qa,bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest(),seconds=round(time.monotonic()-start,2))
+              with sync_playwright() as pw:
+                  b=pw.chromium.launch(headless=True,args=['--disable-webgl'])
+                  page=b.new_page(viewport={'width':1280,'height':800})
+                  errors=[]
+                  page.on('pageerror',lambda e:errors.append(str(e)))
+                  page.set_content(Path('index.html').read_text())
+                  page.locator('#modelInput').set_input_files(str(file))
+                  page.wait_for_function('!!model&&!job',timeout=90000)
+                  assert not page.locator('#export').is_disabled()
+                  for angle in ('front','side','back','leftView','topView'):
+                      page.locator('#'+angle).click()
+                      page.locator('#view').screenshot(path=str(out/(angle+'.png')))
+                  page.screenshot(path=str(out/'desktop.png'))
+                  page.set_viewport_size({'width':800,'height':360})
+                  page.wait_for_timeout(200)
+                  page.screenshot(path=str(out/'mobile.png'))
+                  report['mobile_horizontal_overflow']=page.evaluate('document.documentElement.scrollWidth>innerWidth+1')
+                  assert not errors,errors
+                  b.close()
+              report['success']=True
+          except Exception:
+              report['error']=traceback.format_exc()
+              raise
+          finally:
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print(json.dumps(report),flush=True)
+          PY
+          python -u r23_verify.py 2>&1 | tee ../r23-proof/engine.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r23-real-cpu-proof
+          path: r23-proof/
+          retention-days: 7
