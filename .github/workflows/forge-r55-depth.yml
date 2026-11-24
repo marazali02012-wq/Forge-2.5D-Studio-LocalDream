@@ -1,0 +1,54 @@
+name: Forge R55 independent depth benchmark
+on:
+  push:
+    branches: [forge-r55-independent-depth]
+    paths: ['.github/workflows/forge-r55-depth.yml']
+permissions:
+  contents: read
+jobs:
+  cpu-depth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install 'numpy<2' pillow onnxruntime huggingface_hub
+          mkdir -p evidence models
+          git clone --depth 1 https://github.com/VAST-AI-Research/TripoSR.git upstream
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download('onnx-community/depth-anything-v2-small-ONNX',allow_patterns=['onnx/model.onnx','onnx/model.onnx_data','preprocessor_config.json'],local_dir='models')
+          PY
+          sha256sum models/onnx/model.onnx*
+      - name: Real relative depth predictions
+        run: |
+          python - <<'PY'
+          import numpy as np, onnxruntime as ort, time, json
+          from PIL import Image
+          opts=ort.SessionOptions();opts.intra_op_num_threads=2;opts.inter_op_num_threads=1
+          s=ort.InferenceSession('models/onnx/model.onnx',sess_options=opts,providers=['CPUExecutionProvider'])
+          N=192
+          rows=[]
+          for name in ['robot','police_woman','chair','horse']:
+              a=np.asarray(Image.open('upstream/examples/'+name+'.png').convert('RGBA'));y,x=np.where(a[:,:,3]>=96)
+              crop=Image.fromarray(a[y.min():y.max()+1,x.min():x.max()+1]);w,h=crop.size;r=(N-12)/max(w,h)
+              w,h=max(1,round(w*r)),max(1,round(h*r));frame=Image.new('RGBA',(N,N));frame.paste(crop.resize((w,h),Image.Resampling.BILINEAR),((N-w)//2,(N-h)//2))
+              bg=Image.new('RGBA',frame.size,(127,127,127,255));bg.alpha_composite(frame)
+              a=np.asarray(bg.convert('RGB').resize((518,518),Image.Resampling.BICUBIC),np.float32)/255
+              a=(a-np.array([.485,.456,.406],np.float32))/np.array([.229,.224,.225],np.float32)
+              t=time.monotonic();d=np.squeeze(s.run(None,{s.get_inputs()[0].name:np.ascontiguousarray(a.transpose(2,0,1)[None])})[0])
+              assert d.ndim==2 and np.isfinite(d).all() and np.ptp(d)>0
+              d=np.asarray(Image.fromarray(d.astype(np.float32)).resize((N,N),Image.Resampling.BILINEAR))
+              np.save('evidence/'+name+'.npy',d);frame.save('evidence/'+name+'_frame.png')
+              Image.fromarray(np.uint8((d-d.min())/np.ptp(d)*255)).save('evidence/'+name+'_depth.png')
+              row=dict(name=name,seconds=time.monotonic()-t,range=[float(d.min()),float(d.max())],shape=list(d.shape),provider=s.get_providers());rows.append(row);print(json.dumps(row),flush=True)
+          open('evidence/results.json','w').write(json.dumps(rows,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r55-real-depth
+          path: evidence
+          retention-days: 7
