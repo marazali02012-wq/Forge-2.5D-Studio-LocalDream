@@ -62,6 +62,20 @@ def build_rig(raw,guide):
         j['bufferViews'].append(view);acc={'bufferView':len(j['bufferViews'])-1,'componentType':ctype,'count':len(a),'type':kind}
         if bounds:acc.update(min=[float(np.min(a))],max=[float(np.max(a))])
         j['accessors'].append(acc);return len(j['accessors'])-1
+    # A valid static GLB may omit NORMAL. Native skin playback needs normals.
+    # Derive area-weighted vertex normals from original triangles only when absent.
+    # Preserve existing normals/materials/indices/positions and all original bytes.
+    if 'NORMAL' not in p['attributes']:
+        idx=(accessor(j,b,p['indices']).reshape(-1) if 'indices' in p else np.arange(len(v)))
+        if len(idx)%3 or idx.dtype.kind not in 'ui' or np.any(idx<0) or np.any(idx>=len(v)):
+            raise ValueError('Invalid triangle indices for normals')
+        tri=idx.reshape(-1,3);a0,a1,a2=v[tri[:,0]],v[tri[:,1]],v[tri[:,2]]
+        cross=np.cross(a1-a0,a2-a0);norm=np.zeros_like(v)
+        for k in range(3):np.add.at(norm,tri[:,k],cross)
+        lengths=np.linalg.norm(norm,axis=1);valid=lengths>1e-12
+        if not valid.any():raise ValueError('Degenerate mesh normals')
+        norm[valid]/=lengths[valid,None];norm[~valid]=[0.,1.,0.]
+        p['attributes']['NORMAL']=add(norm.astype('<f4'),5126,'VEC3',34962)
     p['attributes']['JOINTS_0']=add(js,5123,'VEC4',34962);p['attributes']['WEIGHTS_0']=add(ws,5126,'VEC4',34962)
     start=len(nodes);inv=np.tile(np.eye(4,dtype='<f4'),(n,1,1));inv[:,:3,3]=-pts
     for i in range(n):

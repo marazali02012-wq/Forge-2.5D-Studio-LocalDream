@@ -4,7 +4,8 @@ import trimesh
 from scipy.spatial import cKDTree
 from rig import unpack, accessor
 
-def propose_humanoid(raw):
+def propose_humanoid(raw,joint_count=21):
+    if joint_count not in (21,26):raise ValueError("21 or 26 joints required")
     j,b=unpack(raw)
     if j.get('skins') or j.get('animations') or j.get('extensionsRequired') or len(j.get('meshes',[]))!=1 or len(j['meshes'][0]['primitives'])!=1: raise ValueError('Single static mesh required')
     if len([n for n in j['nodes'] if 'mesh' in n])!=1 or any(any(k in n for k in ('matrix','translation','rotation','scale')) for n in j['nodes']): raise ValueError('Apply transforms')
@@ -62,4 +63,43 @@ def propose_humanoid(raw):
         z=band(.045,.025); z=z[z[:,0]<mid] if i==0 else z[z[:,0]>mid]; parent=add(side+' Foot',parent,center(z))
     for row in rows[1:]:
         if np.linalg.norm((np.array(row['position'])-rows[row['parent']]['position'])*s)<max(s)*.015: raise ValueError('Collapsed joint')
-    return {'guide':{'joints':rows,'test_joint':6,'axis':'x','degrees':25},'requires_review':True,'anatomical':False,'method':'geometry_t_pose','joint_count':len(rows)}
+    # Extended geometry-only proposal: same validated 21 landmarks, with five
+    # additional joints inserted in hierarchy. Never invent ambiguous foot direction.
+    facing=None
+    if joint_count==26:
+        original={r['name']:r for r in rows}; extra={}; toes={}; signs=[]
+        def pos(n):return np.asarray(original[n]['position'],float)
+        def snap(p):
+            d,i=tree.query(np.asarray(p)*s)
+            if d>max(s)*.025:raise ValueError('Extended joint outside body')
+            return q[i].round(6).tolist()
+        extra['Upper Spine']=snap((pos('Spine')+pos('Chest'))*.5)
+        for side,sgn in [('L',-1),('R',1)]:
+            extra[side+' Clavicle']=snap((pos('Chest')+pos(side+' Shoulder'))*.5)
+            ankle=pos(side+' Ankle'); foot=pos(side+' Foot')
+            z=band(.045,.025);z=z[(z[:,0]-mid)*sgn>0]
+            zlo,zhi=np.quantile(z[:,2],[.05,.95]); forward=zhi-ankle[2];back=ankle[2]-zlo
+            # Require genuine foot protrusion relative to ankle in BOTH feet.
+            if max(forward,back)*s[2]<max(s)*.035 or abs(forward-back)*s[2]<max(s)*.012:raise ValueError('Foot forward direction ambiguous; use 21 joints/manual guide')
+            sign=1 if forward>back else -1; signs.append(sign)
+            region=z[z[:,2]>=np.quantile(z[:,2],.88)] if sign==1 else z[z[:,2]<=np.quantile(z[:,2],.12)]
+            toe=np.asarray(snap(center(region)))
+            if (toe[2]-foot[2])*sign*s[2]<max(s)*.015:raise ValueError('Toe landmark not distinct')
+            toes[side+' Toe']=toe.tolist()
+        if signs[0]!=signs[1]:raise ValueError('Feet face inconsistent directions')
+        facing=signs[0]
+        names=[r['name'] for r in rows];extended=[];ids={}
+        def emit(name,parent,position):
+            parent_id=-1 if parent is None else ids[parent]
+            if parent_id>=0 and np.linalg.norm((np.asarray(position)-np.asarray(extended[parent_id]['position']))*s)<max(s)*.015:raise ValueError('Collapsed extended joint')
+            ids[name]=len(extended);extended.append({'name':name,'parent':parent_id,'position':position})
+        for r in rows:
+            name=r['name'];parent=None if r['parent']<0 else names[r['parent']]
+            if name=='Chest':emit('Upper Spine','Spine',extra['Upper Spine']);parent='Upper Spine'
+            if name in ('L Shoulder','R Shoulder'):
+                clavicle=name[0]+' Clavicle';emit(clavicle,'Chest',extra[clavicle]);parent=clavicle
+            emit(name,parent,r['position'])
+            if name in ('L Foot','R Foot'):emit(name[0]+' Toe',name,toes[name[0]+' Toe'])
+        rows=extended
+    test_joint=next(i for i,r in enumerate(rows) if r['name']=='L Elbow')
+    return {'guide':{'joints':rows,'test_joint':test_joint,'axis':'x','degrees':25},'requires_review':True,'anatomical':False,'method':'geometry_t_pose','joint_count':len(rows),'bone_links':len(rows)-1,'facing':facing}
