@@ -37,7 +37,8 @@ jobs:
           free -h | tee evidence/memory.txt
       - name: Real CPU inference on same public benchmark sources
         run: |
-          python -u /usr/bin/time -v python -u experiments/r59/sf3d_eval.py models evidence inputs/robot.png --res 96 2>&1 | tee evidence/inference.log
+          set -o pipefail
+          /usr/bin/time -v python -u experiments/r59/sf3d_eval.py models evidence inputs/robot.png --res 96 2>&1 | tee evidence/inference.log
           test -s evidence/report.json
           rm -f evidence/triplane.npy
       - uses: actions/upload-artifact@v4
