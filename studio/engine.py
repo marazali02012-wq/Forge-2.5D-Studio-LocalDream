@@ -23,7 +23,7 @@ model=None
 if moderngl is not None:
     original=moderngl.create_context
     moderngl.create_context=lambda *a,**kw:original(*a,**dict(kw,backend='egl'))
-def generate_checked(rgba,texture,resolution=96,source_projection=False):
+def generate_checked(rgba,texture,resolution=96,source_projection=False,detail_refine=False):
     global model
     if model is None:
         torch.set_num_threads(max(1,min(4,int(os.environ.get("OMP_NUM_THREADS","4")),os.cpu_count() or 1)))
@@ -66,6 +66,10 @@ def generate_checked(rgba,texture,resolution=96,source_projection=False):
                 attempts.append({'resolution':r,'threshold':t,'framing':framing,'error':type(e).__name__})
         if mesh is None:raise ValueError('No valid generated mesh')
         mesh,best=retry_density(model,best_code,mesh,best,ref,attempts)
+        detail={'requested':False,'applied':False,'reason':'not_requested'}
+        if detail_refine:
+            from detail_refine import refine_detail
+            mesh,best,detail=refine_detail(model,best_code,mesh,best,ref,attempts)
         # Extract the single scene from the batch, as required by upstream bake_texture.
         if best_code.ndim!=5 or best_code.shape[0]!=1:raise ValueError('Unexpected scene batch dimensions')
         method='egl'
@@ -106,7 +110,7 @@ def generate_checked(rgba,texture,resolution=96,source_projection=False):
     geometry=geometry_report(mesh)
     try:geometry['shape_diagnostics']=shape_diagnostics(mesh)
     except Exception:geometry['shape_diagnostics']=None
-    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_topology_density_retry',color=color,source_projection=projection,atlas=atlas,geometry=geometry,bake_method=method)
+    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_topology_density_retry',color=color,source_projection=projection,atlas=atlas,geometry=geometry,bake_method=method,detail_refine=detail)
 
 def generate(rgba,texture,resolution=96):
     return generate_checked(rgba,texture,resolution)[0]
