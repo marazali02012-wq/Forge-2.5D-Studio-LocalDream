@@ -50,8 +50,14 @@ def build_rig(raw,guide):
             seg=pts[child]-pts[i];t=np.clip((v-pts[i])@seg/(seg@seg),0,.85)
             d=np.minimum(d,np.sum((v-pts[i]-t[:,None]*seg)**2,axis=1))
         distances[:,i]=d
+    blend=max(diag*.055,1e-8)
+    weight_method=guide.get('weight_method','distance')
+    if weight_method=='bilateral_leg_guard':
+        from rig_weights import protect_legs
+        distances=protect_legs(distances,v,pts,names,parents,blend)
+    elif weight_method!='distance':raise ValueError('Unknown skin weight method')
     k=min(4,n);order=np.argsort(distances,axis=1,kind='stable')[:,:k];d=np.take_along_axis(distances,order,axis=1)
-    blend=max(diag*.055,1e-8);weight=np.exp(-(d-d[:,0:1])/(2*blend**2));weight/=weight.sum(1,keepdims=True)
+    weight=np.exp(-(d-d[:,0:1])/(2*blend**2));weight/=weight.sum(1,keepdims=True)
     js=np.zeros((len(v),4),dtype='<u2');ws=np.zeros((len(v),4),dtype='<f4');js[:,:k]=order;ws[:,:k]=weight
     if not np.isfinite(ws).all() or not np.allclose(ws.sum(1),1,atol=1e-6):raise ValueError('Invalid weights')
     # Append to original GLB: existing positions, UVs, indices, image bytes remain untouched.

@@ -102,4 +102,4 @@ def propose_humanoid(raw,joint_count=21):
             if name in ('L Foot','R Foot'):emit(name[0]+' Toe',name,toes[name[0]+' Toe'])
         rows=extended
     test_joint=next(i for i,r in enumerate(rows) if r['name']=='L Elbow')
-    return {'guide':{'joints':rows,'test_joint':test_joint,'axis':'x','degrees':25},'requires_review':True,'anatomical':False,'method':'geometry_t_pose','joint_count':len(rows),'bone_links':len(rows)-1,'facing':facing}
+    return {'guide':{'joints':rows,'test_joint':test_joint,'axis':'x','degrees':25,**({'weight_method':'bilateral_leg_guard'} if joint_count==26 else {})},'requires_review':True,'anatomical':False,'method':'geometry_t_pose','joint_count':len(rows),'bone_links':len(rows)-1,'facing':facing}
