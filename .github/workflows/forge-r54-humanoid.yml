@@ -1,0 +1,72 @@
+name: Forge R54 independent humanoid rig benchmark
+on:
+  push:
+    branches: [forge-r54-leg-weight-guard]
+    paths: ['.github/workflows/forge-r54-humanoid.yml']
+permissions:
+  contents: read
+jobs:
+  independent-mesh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install 'numpy<2' scipy trimesh==4.5.3 pillow
+          mkdir -p evidence
+          curl --fail --location --retry 2 -o evidence/CesiumMan.glb https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb
+          curl --fail --location --retry 2 -o evidence/MakeHuman.obj https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj
+          curl --fail --location -o evidence/CesiumMan_LICENSE.md https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/LICENSE.md
+          sha256sum evidence/CesiumMan.glb evidence/MakeHuman.obj studio/rig_weights.py
+      - name: Actual independent meshes, no copied rig or skin
+        env:
+          PYTHONPATH: studio
+        run: |
+          python - <<'PY'
+          import json,io,traceback,time,copy
+          from pathlib import Path
+          import numpy as np,trimesh
+          from rig import build_rig,unpack,accessor
+          from auto_rig import propose_humanoid
+          P=Path('evidence');rows=[]
+          for asset in ('CesiumMan.glb','MakeHuman.obj'):
+              row={'asset':asset,'source':'external independent artist-created mesh, not AI inference','automatic':{},'static_preparation':'rest geometry; largest welded component for benchmark; existing skin and animation not used; texture not tested'}
+              try:
+                  scene=trimesh.load(P/asset,force='scene',process=False)
+                  m=scene.dump(concatenate=True)
+                  m=trimesh.Trimesh(vertices=m.vertices,faces=m.faces,process=True)
+                  parts=m.split(only_watertight=False)
+                  m=max(parts,key=lambda x:len(x.faces))
+                  row['vertices']=len(m.vertices);row['triangles']=len(m.faces);row['watertight']=bool(m.is_watertight);row['extents']=m.extents.tolist();row['components_before']=len(parts)
+                  # Independently test only upright coordinate frame as provided.
+                  raw=m.export(file_type='glb');(P/(asset+'.static.glb')).write_bytes(raw)
+                  for n in (21,26):
+                      try:
+                          t=time.monotonic();r=propose_humanoid(raw,n);g=r['guide'];row['automatic'][str(n)]={'accepted':True,'seconds':time.monotonic()-t,'facing':r['facing']}
+                          ids={j['name']:i for i,j in enumerate(g['joints'])}
+                          roles={s.lower()+k:ids[s+' '+name] for s in 'LR' for k,name in [('h','Hip'),('k','Knee'),('a','Ankle'),('s','Shoulder'),('e','Elbow'),('w','Wrist')]}
+                          sign=r['facing'] or 1
+                          clips=[{'name':'Walk','duration':1.2,'gait':{'roles':{k:v for k,v in roles.items() if not k.endswith('w')},'sign':sign}},{'name':'Attack','duration':.8,'combat':{'roles':{k:v for k,v in roles.items() if k[-1] in 'sew'},'sign':sign,'side':'r'}},*({'name':kind,'duration':1.2,'reaction':{'roles':dict(roles,spine=ids['Spine'],chest=ids['Chest'],head=ids['Head']),'sign':sign,'kind':kind}} for kind in ['hurt','death'])]
+                          for mode in ('distance','bilateral_leg_guard') if n==26 else ('distance',):
+                              q=copy.deepcopy(g);q['weight_method']=mode
+                              out=build_rig(raw,q);j,b=unpack(out);a=j['meshes'][0]['primitives'][0]['attributes'];w=accessor(j,b,a['WEIGHTS_0']);assert np.allclose(w.sum(1),1,atol=1e-6)
+                              (P/(asset+'.'+str(n)+'.'+mode+'.glb')).write_bytes(out)
+                              try:
+                                  q['clips']=clips;out=build_rig(raw,q);(P/(asset+'.'+str(n)+'.'+mode+'.animated.glb')).write_bytes(out)
+                                  row['automatic'][str(n)][mode]='five clips produced; visual quality not verified'
+                              except Exception as e:row['automatic'][str(n)][mode]='bind OK; clips rejected: '+str(e)
+                      except Exception as e:row['automatic'][str(n)]={'accepted':False,'reason':str(e)}
+              except Exception as e:row['error']=traceback.format_exc()
+              print(json.dumps(row),flush=True);rows.append(row)
+          (P/'results.json').write_text(json.dumps(rows,indent=2))
+          assert all('vertices' in r for r in rows)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r54-independent-humanoid
+          path: evidence/
+          retention-days: 7
