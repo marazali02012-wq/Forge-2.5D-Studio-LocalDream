@@ -1,0 +1,76 @@
+name: Forge R29 global prompt quality
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r23-real-inference-test]
+    paths: [.github/workflows/forge-r29-prompt.yml]
+permissions:
+  contents: read
+jobs:
+  real-prompt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HF_HUB_DISABLE_XET: '1'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_ARGS: '-DGGML_NATIVE=OFF'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native runtime
+        run: |
+          mkdir -p r29-proof
+          pip install --no-binary=llama-cpp-python --no-cache-dir llama-cpp-python==0.3.2 'huggingface-hub<1'
+          python -c 'from llama_cpp import Llama'
+      - name: Actual multilingual model test
+        run: |
+          PYTHONPATH=studio python -u - <<'PY'
+          import json,traceback,time
+          from pathlib import Path
+          from huggingface_hub import hf_hub_download
+          from llama_cpp import Llama
+          from prompt_guard import generate_prompt
+          report={'mock':False,'model':'Qwen2.5-7B-Instruct-Q4_K_M','results':[],'semantic_review_required':True}
+          out=Path('r29-proof/report.json')
+          cases=[
+            ('tr','Kırmızı ahşap masa, dört ayak, çekmece olmasın.','image',[['table'],['red'],['wood'],['four','4'],['no drawer','without drawer','drawerless']]),
+            ('en','A blue glass bottle without a cap.','model',[['blue'],['glass'],['bottle'],['no cap','without a cap','capless','without cap']]),
+            ('zh','一把绿色木椅，没有扶手','image',[['green'],['wood'],['chair'],['no armrest','without armrest','armless']]),
+            ('ar','ارسم كرة حمراء من المعدن بدون كتابة','image',[['red'],['metal'],['ball','sphere'],['no text','without text','no writing','without writing']]),
+            ('ja','黒い革の質感、光沢なし','texture',[['black'],['leather'],['matte','no gloss','non-gloss','without gloss','no shine','without shine']]),
+            ('fr','Deux cubes jaunes en métal, sans texte.','model',[['two','2'],['yellow'],['cube'],['metal'],['no text','without text']]),
+            ('ru','Нарисуй белую керамическую чашку без ручки','image',[['white'],['ceramic'],['cup','mug'],['no handle','without a handle','handleless','without handle']])
+          ]
+          try:
+              hf_hub_download('Qwen/Qwen2.5-7B-Instruct-GGUF','qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf')
+              p=hf_hub_download('Qwen/Qwen2.5-7B-Instruct-GGUF','qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf')
+              llm=Llama(model_path=p,n_ctx=2048,n_threads=4,n_gpu_layers=0,verbose=False)
+              for lang,phrase,purpose,expected in cases:
+                  item=dict(language=lang,input=phrase,purpose=purpose)
+                  start=time.monotonic()
+                  try:
+                      value=generate_prompt(llm,phrase,purpose)
+                      item.update(output=value,keyword_screen=all(any(x in value.lower() for x in group) for group in expected))
+                  except Exception:
+                      item.update(error=traceback.format_exc(),keyword_screen=False)
+                  item['seconds']=round(time.monotonic()-start,2)
+                  report['results'].append(item)
+                  out.write_text(json.dumps(report,ensure_ascii=False,indent=2))
+                  print(json.dumps(item,ensure_ascii=False),flush=True)
+              llm.close()
+              report['all_keyword_screens_pass']=all(x['keyword_screen'] for x in report['results'])
+          except Exception:
+              report['error']=traceback.format_exc()
+              raise
+          finally:
+              out.write_text(json.dumps(report,ensure_ascii=False,indent=2))
+          if not report.get('all_keyword_screens_pass'):raise SystemExit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r29-global-prompt-proof
+          path: r29-proof/
+          retention-days: 7
