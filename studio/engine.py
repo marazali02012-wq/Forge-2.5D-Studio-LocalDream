@@ -20,36 +20,30 @@ def generate_checked(rgba,texture,resolution=96):
         torch.set_num_threads(max(1,min(4,int(os.environ.get("OMP_NUM_THREADS","4")),os.cpu_count() or 1)))
         model=TSR.from_pretrained('stabilityai/TripoSR',config_name='config.yaml',weight_name='model.ckpt').to('cpu').eval()
         model.renderer.set_chunk_size(4096)
-    a=np.asarray(resize_foreground(rgba,0.85),dtype=np.float32)/255
-    rgb=a[:,:,:3]*a[:,:,3:]+.5*(1-a[:,:,3:])
+    ref=source_mask(rgba)
+    attempts=[]; best=None; mesh=None; best_code=None
+    # Change input framing as well as extraction. Each alternate is a real AI inference.
+    configs=[(0.85,resolution,25),(0.94,min(160,max(resolution,128)),25),(0.72,min(160,max(resolution,128)),25)]
     with torch.inference_mode():
-        code=model([Image.fromarray(np.uint8(rgb*255))],device='cpu')
-        ref=source_mask(rgba)
-        attempts=[]; best=None; mesh=None
-        # Reuse actual scene code. Vary extraction, never substitute a template.
-        def candidate(r,t):
-            m=model.extract_mesh(code,False,resolution=r,threshold=t)[0]
-            if len(m.faces)<500 or len(m.vertices)<300 or not np.isfinite(m.vertices).all() or min(m.extents)<=0.01:
-                raise ValueError('Degenerate generated mesh')
-            if m.volume<0:m.invert()
-            q=compare(ref,m.vertices[:,[1,2,0]],m.faces)
-            q.update(resolution=r,threshold=t)
-            return m,q
-        configs=[(resolution,25)]
-        for r,t in configs:
+        for framing,r,t in configs:
             try:
-                m,q=candidate(r,t); attempts.append(q)
-                if best is None or prefer(best,q): mesh,best=m,q
+                a=np.asarray(resize_foreground(rgba,framing),dtype=np.float32)/255
+                rgb=a[:,:,:3]*a[:,:,3:]+.5*(1-a[:,:,3:])
+                code=model([Image.fromarray(np.uint8(np.clip(rgb,0,1)*255))],device='cpu')
+                m=model.extract_mesh(code,False,resolution=r,threshold=t)[0]
+                if len(m.faces)<500 or len(m.vertices)<300 or not np.isfinite(m.vertices).all() or min(m.extents)<=.01:
+                    raise ValueError('Degenerate generated mesh')
+                if m.volume<0:m.invert()
+                q=compare(ref,m.vertices[:,[1,2,0]],m.faces)
+                q.update(resolution=r,threshold=t,framing=framing)
+                attempts.append(q)
+                if best is None or prefer(best,q):
+                    mesh,best,best_code=m,q,code
+                if best is not None and not best['warning']:break
             except Exception as e:
-                attempts.append({'resolution':r,'threshold':t,'error':type(e).__name__})
-            if len(attempts)==1 and (best is None or best['warning']):
-                r2=min(160,max(128,resolution+32))
-                if r2!=r:configs.append((r2,25))
-                t2=20 if best is None or best['recall']<best['precision'] else 32
-                if (r2,t2) not in configs:configs.append((r2,t2))
-            if best is not None and not best['warning']:break
+                attempts.append({'resolution':r,'threshold':t,'framing':framing,'error':type(e).__name__})
         if mesh is None:raise ValueError('No valid generated mesh')
-        baked=bake_texture(mesh,model,code[0],texture)
+        baked=bake_texture(mesh,model,best_code,texture)
     tex=Image.fromarray(np.uint8(np.clip(baked['colors'],0,1)*255)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     vm=baked['vmapping']
     visual=trimesh.visual.texture.TextureVisuals(uv=baked['uvs'],material=trimesh.visual.material.PBRMaterial(baseColorTexture=tex,metallicFactor=0.,roughnessFactor=1.))
@@ -57,7 +51,7 @@ def generate_checked(rgba,texture,resolution=96):
     # TripoSR native +X front, +Z up -> glTF +Z front, +Y up. Proper rotation (det=+1).
     m.apply_transform(np.array([[0.,1.,0.,0.],[0.,0.,1.,0.],[1.,0.,0.,0.],[0.,0.,0.,1.]]))
     if np.asarray(tex)[:,:,3].max()==0:raise ValueError('Empty texture')
-    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_heuristic')
+    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference')
 
 def generate(rgba,texture,resolution=96):
     return generate_checked(rgba,texture,resolution)[0]
