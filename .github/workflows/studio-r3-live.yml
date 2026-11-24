@@ -1,0 +1,78 @@
+name: Forge Studio R3 real GPU proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-r3-live.yml]
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install gradio_client pillow
+      - name: Generate real GLB from a non-humanoid example
+        run: |
+          mkdir -p r3-proof
+          python -u - <<'PY'
+          from gradio_client import Client,handle_file
+          from PIL import Image
+          import urllib.request,json,struct,shutil,pathlib
+          out=pathlib.Path('r3-proof')
+          report={'mock':False,'provider':'stabilityai/stable-fast-3d','success':False}
+          try:
+              url='https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/axe.png'
+              source=out/'source.png'
+              urllib.request.urlretrieve(url,source)
+              with Image.open(source) as im:
+                  assert im.convert('RGBA').getchannel('A').getextrema()[0]<255
+                  report['source_size']=im.size
+              c=Client('stabilityai/stable-fast-3d',download_files=str(out))
+              api=c.view_api(return_format='dict')
+              for n in ['/requires_bg_remove','/run_button']:
+                  assert n in api['named_endpoints'],n
+              print(json.dumps(api['named_endpoints']['/run_button'],default=str),flush=True)
+              p=handle_file(str(source))
+              prep=c.predict(p,0.85,api_name='/requires_bg_remove')
+              print('PREP',str(prep)[:1000],flush=True)
+              result=c.predict('Run',p,None,.85,'None',-1,512,api_name='/run_button')
+              def locate(x):
+                  if isinstance(x,(list,tuple)):
+                      for a in x:
+                          v=locate(a)
+                          if v:return v
+                  if isinstance(x,dict):
+                      for k in ('path','url','value'):
+                          if k in x:
+                              v=locate(x[k])
+                              if v:return v
+                  if isinstance(x,str) and x.endswith('.glb') and pathlib.Path(x).is_file():return x
+              f=locate(result)
+              assert f,'No downloaded GLB: '+str(result)[:250]
+              dest=out/'model.glb'
+              if pathlib.Path(f).resolve()!=dest.resolve():shutil.copyfile(f,dest)
+              b=dest.read_bytes()
+              assert b[:4]==b'glTF' and struct.unpack_from('<I',b,4)[0]==2 and struct.unpack_from('<I',b,8)[0]==len(b)
+              j=json.loads(b[20:20+struct.unpack_from('<I',b,12)[0]])
+              prims=[p for m in j['meshes'] for p in m['primitives']]
+              assert any('POSITION' in p['attributes'] and 'TEXCOORD_0' in p['attributes'] for p in prims)
+              assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j.get('materials',[]))
+              assert any('bufferView' in i for i in j.get('images',[]))
+              report.update(success=True,bytes=len(b),meshes=len(j['meshes']),images=len(j['images']),primitives=len(prims))
+          except Exception as e:
+              report['error']=str(e)[:1500]
+          finally:
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print('R3_LIVE '+json.dumps(report),flush=True)
+          if not report['success']:raise SystemExit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r3-proof
+          path: r3-proof/
