@@ -17,7 +17,8 @@ from tsr.system import TSR
 from tsr.utils import resize_foreground
 from quality import source_mask, compare, prefer
 from color_qa import calibrate
-from atlas_qa import pad_generated_atlas, geometry_report
+from atlas_qa import pad_generated_atlas, geometry_report, prefer_candidate, early_accept
+from density_qa import retry_density, shape_diagnostics
 model=None
 if moderngl is not None:
     original=moderngl.create_context
@@ -53,15 +54,16 @@ def generate_checked(rgba,texture,resolution=96):
                     raise ValueError('Degenerate generated mesh')
                 if m.volume<0:m.invert()
                 q=compare(ref,m.vertices[:,[1,2,0]],m.faces)
-                q.update(resolution=r,threshold=t,framing=framing)
+                q.update(resolution=r,threshold=t,framing=framing,topology=geometry_report(m))
                 attempts.append(q)
-                if best is None or prefer(best,q):
+                if best is None or prefer_candidate(best,q):
                     mesh,best,best_code=m,q,code
                 # Keep warning honest; do not force retries on a passing initial candidate.
-                if best is not None and not best['warning']:break
+                if best is not None and early_accept(best):break
             except Exception as e:
                 attempts.append({'resolution':r,'threshold':t,'framing':framing,'error':type(e).__name__})
         if mesh is None:raise ValueError('No valid generated mesh')
+        mesh,best=retry_density(model,best_code,mesh,best,ref,attempts)
         # Extract the single scene from the batch, as required by upstream bake_texture.
         if best_code.ndim!=5 or best_code.shape[0]!=1:raise ValueError('Unexpected scene batch dimensions')
         method='egl'
@@ -91,7 +93,9 @@ def generate_checked(rgba,texture,resolution=96):
     padded,atlas=pad_generated_atlas(m.visual.material.baseColorTexture)
     m.visual.material.baseColorTexture=padded
     geometry=geometry_report(mesh)
-    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference',color=color,atlas=atlas,geometry=geometry,bake_method=method)
+    try:geometry['shape_diagnostics']=shape_diagnostics(mesh)
+    except Exception:geometry['shape_diagnostics']=None
+    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_topology_density_retry',color=color,atlas=atlas,geometry=geometry,bake_method=method)
 
 def generate(rgba,texture,resolution=96):
     return generate_checked(rgba,texture,resolution)[0]
