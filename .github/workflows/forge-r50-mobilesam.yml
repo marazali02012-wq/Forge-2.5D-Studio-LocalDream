@@ -1,0 +1,72 @@
+name: Forge R50 real MobileSAM CPU verification
+on:
+  push:
+    branches: [forge-r50-mobilesam-cpu-test]
+    paths: ['.github/workflows/forge-r50-mobilesam.yml']
+permissions:
+  contents: read
+jobs:
+  actual-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real CPU dependencies and official checkpoint
+        run: |
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' timm==0.6.13 pillow scipy scikit-image opencv-python-headless==4.11.0.86
+          git clone --depth 1 https://github.com/ChaoningZhang/MobileSAM.git upstream
+          git -C upstream rev-parse HEAD
+          pip install --no-deps ./upstream
+          test -s upstream/weights/mobile_sam.pt
+          sha256sum upstream/weights/mobile_sam.pt
+      - name: Real inference on synthetic and photographic prompts
+        run: |
+          mkdir -p evidence
+          python - <<'PY'
+          import time, json, torch, numpy as np
+          from PIL import Image, ImageDraw
+          from skimage import data
+          from mobile_sam import sam_model_registry, SamPredictor
+          torch.set_num_threads(2)
+          m=sam_model_registry['vit_t'](checkpoint='upstream/weights/mobile_sam.pt').to('cpu').eval()
+          p=SamPredictor(m)
+          a=Image.new('RGB',(384,384),(240,240,240))
+          d=ImageDraw.Draw(a); d.rectangle((70,90,205,310),fill=(25,80,170));d.rectangle((205,150,306,220),fill=(200,60,40))
+          cases=[('connected_part',np.array(a),[205,145,310,225]),('astronaut_face',data.astronaut(),[165,60,265,180]),('coffee_cup',data.coffee(),[110,100,435,365])]
+          out=[]
+          for name,img,box in cases:
+              t=time.monotonic()
+              with torch.inference_mode():
+                  p.set_image(img)
+                  masks,scores,_=p.predict(box=np.array(box,dtype=np.float32),multimask_output=True)
+              dt=time.monotonic()-t
+              x0,y0,x1,y1=box
+              row={'name':name,'seconds':dt,'candidates':[]}
+              sheet=Image.new('RGB',(img.shape[1]*4,img.shape[0]))
+              sheet.paste(Image.fromarray(img),(0,0))
+              for i,(mask,score) in enumerate(zip(masks,scores)):
+                  n=int(mask.sum()); inside=int(mask[y0:y1+1,x0:x1+1].sum())
+                  rec={'score':float(score),'pixels':n,'outside':n-inside}
+                  if name=='connected_part':
+                      gt=np.zeros(mask.shape,bool);gt[150:221,205:307]=True
+                      rec['iou']=float((gt&mask).sum()/(gt|mask).sum())
+                  row['candidates'].append(rec)
+                  v=img.copy();v[mask]=(v[mask]*.4+np.array([0,220,90])*.6).astype(np.uint8)
+                  sheet.paste(Image.fromarray(v),((i+1)*img.shape[1],0))
+              sheet.save('evidence/'+name+'.png');out.append(row)
+              p.reset_image()
+          print(json.dumps(out,indent=2));open('evidence/results.json','w').write(json.dumps(out,indent=2))
+          assert all(any(c['pixels']>0 for c in r['candidates']) for r in out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r50-real-mobilesam-evidence
+          path: evidence
+          retention-days: 7
