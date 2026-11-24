@@ -1,0 +1,116 @@
+name: Forge R47 real humanoid character benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r42-source-fidelity]
+    paths: [.github/workflows/forge-r47-character.yml]
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Provision previously verified CPU runtime
+        run: |
+          mkdir -p r47-proof studio/models
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' omegaconf==2.3.0 pillow==10.4.0 einops==0.7.0 transformers==4.35.0 trimesh==4.5.3 'huggingface-hub<1' imageio rembg onnxruntime scikit-image==0.24.0 xatlas==0.0.9 moderngl==5.10.0 fastapi uvicorn playwright
+          git clone https://github.com/VAST-AI-Research/TripoSR.git studio/upstream-triposr
+          git -C studio/upstream-triposr checkout --detach 107cefdc244c39106fa830359024f6a2f1c78871
+          cat > studio/upstream-triposr/torchmcubes.py <<'PY'
+          import torch,numpy as np
+          from skimage.measure import marching_cubes as mc
+          def marching_cubes(volume,level):
+              v,f,_,_=mc(volume.detach().cpu().numpy(),level=level,gradient_direction='ascent',allow_degenerate=False)
+              return torch.from_numpy(v[:,::-1].copy()).float(),torch.from_numpy(f.copy().astype(np.int64))
+          PY
+          curl --fail --location --retry 2 -o studio/models/u2netp.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx
+          python studio/triposr_setup.py download
+          python -m playwright install --with-deps chromium
+      - name: Actual single-image character reconstruction, independent cases
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+        run: |
+          cd studio
+          python -u - <<'PY'
+          import json,hashlib,io,time,traceback,struct
+          from pathlib import Path
+          import numpy as np
+          from PIL import Image
+          import mask_ai,engine
+          from playwright.sync_api import sync_playwright
+          out=Path('../r47-proof').resolve()
+          cases={'robot':'31ce9687b54dddf2907a39f25b09d62bcbf2a8b0','police_woman':'adda32a7174c8dacd2fea07980f3b233205fb621'}
+          results={}
+          assert mask_ai.diagnose()['configured'],mask_ai.diagnose()
+          for name,expected in cases.items():
+              folder=out/name;folder.mkdir()
+              report={'mock':False,'success':False,'visual_quality':'unreviewed','input_source':'TripoSR official example','source_revision':'107cefdc244c39106fa830359024f6a2f1c78871','source_name':name+'.png'}
+              try:
+                  path=Path('upstream-triposr/examples')/(name+'.png')
+                  data=path.read_bytes()
+                  assert hashlib.sha1(('blob '+str(len(data))+'\0').encode()+data).hexdigest()==expected
+                  original=Image.open(io.BytesIO(data)).convert('RGBA')
+                  original.save(folder/'source.png')
+                  start=time.monotonic()
+                  a=np.asarray(original)[:,:,3]
+                  if (a<=16).mean()>=.01 and (a>=128).mean()>=.01:
+                      rgba=original
+                      report['mask_engine']='original alpha'
+                  else:
+                      rgba=Image.open(io.BytesIO(mask_ai.mask_image(original.convert('RGB')))).convert('RGBA')
+                      report['mask_engine']='U2NetP real CPU'
+                  rgba.save(folder/'mask.png')
+                  fg=np.asarray(rgba)[:,:,3]>=128
+                  assert .01<fg.mean()<.995
+                  report.update(mask_seconds=round(time.monotonic()-start,2),foreground_fraction=float(fg.mean()),edge_touch=bool(fg[0].any() or fg[-1].any() or fg[:,0].any() or fg[:,-1].any()))
+                  start=time.monotonic()
+                  raw,qa=engine.generate_checked(rgba,512,96,source_projection=True)
+                  file=folder/'character.glb';file.write_bytes(raw)
+                  assert raw[:4]==b'glTF'
+                  j=json.loads(raw[20:20+struct.unpack_from('<I',raw,12)[0]])
+                  assert any('TEXCOORD_0' in p['attributes'] for m in j['meshes'] for p in m['primitives'])
+                  assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j['materials'])
+                  report.update(mesh_seconds=round(time.monotonic()-start,2),qa=qa,bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+                  report['generation_success']=True
+                  with sync_playwright() as pw:
+                      b=pw.chromium.launch(headless=True,args=['--disable-webgl'])
+                      p=b.new_page(viewport={'width':1280,'height':800})
+                      errs=[];p.on('pageerror',lambda e:errs.append(str(e)))
+                      p.set_content(Path('index.html').read_text())
+                      p.locator('#modelInput').set_input_files(str(file))
+                      p.wait_for_function('!!model&&!job',timeout=90000)
+                      for angle in ('front','side','back','leftView','topView'):
+                          p.locator('#'+angle).click()
+                          p.wait_for_timeout(180)
+                          p.locator('#view').screenshot(path=str(folder/(angle+'.png')))
+                      assert not errs,errs
+                      b.close()
+                  report['success']=True
+                  report['scope']='real inference and CPU browser import; hidden surfaces and anatomical quality require visual review; no rig test'
+              except Exception:
+                  report['error']=traceback.format_exc()
+              finally:
+                  (folder/'report.json').write_text(json.dumps(report,indent=2))
+                  results[name]=report
+                  print(json.dumps(report),flush=True)
+          (out/'report.json').write_text(json.dumps(results,indent=2))
+          assert all(r['success'] for r in results.values()),'One or more cases failed; review per-case artifacts'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r47-real-character-proof
+          path: r47-proof/
+          retention-days: 7
