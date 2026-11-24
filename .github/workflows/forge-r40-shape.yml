@@ -1,0 +1,75 @@
+name: Forge R40 independent direct text-to-3D alternative
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r23-real-inference-test]
+    paths: [.github/workflows/forge-r40-shape.yml]
+permissions:
+  contents: read
+jobs:
+  real-shape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install independent CPU runtime
+        run: |
+          mkdir -p r40-proof
+          pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' pillow==10.4.0 diffusers==0.30.3 transformers==4.46.3 accelerate==0.34.2 'huggingface-hub<1' safetensors trimesh==4.5.3 scipy playwright
+          python -m playwright install --with-deps chromium
+      - name: Provision official model and generate direct neural mesh
+        run: |
+          python -u - <<'PY'
+          import sys,json,traceback,os
+          from pathlib import Path
+          from huggingface_hub import HfApi,snapshot_download
+          sys.path.insert(0,'studio')
+          from shape_direct import generate
+          out=Path('r40-proof')
+          report={'success':False,'model':'openai/shap-e','visual_review_required':True}
+          try:
+              rev=HfApi().model_info(report['model']).sha
+              report['revision']=rev
+              model=snapshot_download(report['model'],revision=rev,allow_patterns=['model_index.json','README.md','LICENSE*','scheduler/*','tokenizer/*','prior/config.json','prior/diffusion_pytorch_model.bin','shap_e_renderer/config.json','shap_e_renderer/diffusion_pytorch_model.bin','text_encoder/config.json','text_encoder/pytorch_model.bin'])
+              os.environ['HF_HUB_OFFLINE']='1'
+              os.environ['TRANSFORMERS_OFFLINE']='1'
+              raw,qa=generate(model,'A single metallic red ball without writing',steps=32)
+              file=out/'ball.glb'
+              file.write_bytes(raw)
+              report.update(qa)
+              from playwright.sync_api import sync_playwright
+              with sync_playwright() as pw:
+                  b=pw.chromium.launch(headless=True,args=['--disable-webgl'])
+                  p=b.new_page(viewport={'width':1280,'height':800})
+                  errs=[];p.on('pageerror',lambda e:errs.append(str(e)))
+                  p.set_content(Path('studio/index.html').read_text())
+                  p.locator('#modelInput').set_input_files(str(file.resolve()))
+                  p.wait_for_function('!!model&&!job',timeout=90000)
+                  for angle in ('front','side','back','leftView','topView'):
+                      p.locator('#'+angle).click()
+                      p.locator('#view').screenshot(path=str(out/(angle+'.png')))
+                  assert not errs,errs
+                  b.close()
+              report['success']=True
+              report['quality_gate_pass']=bool(qa['watertight'] and qa['components']==1 and qa['hull_fill']>=.95 and qa['radial_p05_p95']>=.9)
+          except Exception:
+              report['error']=traceback.format_exc()
+              raise
+          finally:
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print(json.dumps(report),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r40-direct-shape-proof
+          path: r40-proof/
+          retention-days: 7
