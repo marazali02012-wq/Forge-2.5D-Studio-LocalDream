@@ -74,6 +74,25 @@ def build_rig(raw,guide):
     if type(joint)!=int or not 1<=joint<n or axis not in 'xyz' or len(axis)!=1 or not np.isfinite(deg) or not 1<=abs(deg)<=60:raise ValueError('Invalid test motion')
     q=np.array([[0,0,0,1],[0,0,0,1],[0,0,0,1]],dtype='<f4');ang=np.deg2rad(deg)/2;q[1,'xyz'.index(axis)]=np.sin(ang);q[1,3]=np.cos(ang)
     j['animations']=[{'name':'Forge joint bend test (not walk)','samplers':[{'input':add(np.array([0,1,2],dtype='<f4'),5126,'SCALAR',bounds=True),'output':add(q,5126,'VEC4'),'interpolation':'LINEAR'}],'channels':[{'sampler':0,'target':{'node':start+joint,'path':'rotation'}}]}]
+    # Optional explicit multi-joint keyframe clips; keep the original bend test.
+    clips=guide.get('clips',[])
+    if not isinstance(clips,list) or len(clips)>7:raise ValueError('Clip limit')
+    for clip in clips:
+        name=clip['name'];tracks=clip['tracks'];duration=float(clip['duration'])
+        if not isinstance(name,str) or not 1<=len(name)<=64 or not np.isfinite(duration) or not .2<=duration<=30 or not isinstance(tracks,list) or not 1<=len(tracks)<=n or name in [a['name'] for a in j['animations']]:raise ValueError('Invalid clip')
+        animation={'name':name,'samplers':[],'channels':[]};used=set()
+        for track in tracks:
+            idx=track['joint'];keys=np.asarray(track['keys'],dtype=np.float64)
+            if type(idx)!=int or not 0<=idx<n or idx in used or keys.ndim!=2 or keys.shape[1]!=4 or not 2<=len(keys)<=64 or not np.isfinite(keys).all() or keys[0,0]!=0 or abs(keys[-1,0]-duration)>1e-6 or np.any(np.diff(keys[:,0])<.001) or np.any(abs(keys[:,1:])>90):raise ValueError('Invalid keyframes')
+            used.add(idx)
+            # Euler XYZ intrinsic convention is explicitly defined by scipy; glTF stores quaternions.
+            from scipy.spatial.transform import Rotation
+            q=Rotation.from_euler('XYZ',keys[:,1:],degrees=True).as_quat().astype('<f4')
+            for k in range(1,len(q)):
+                if np.dot(q[k-1],q[k])<0:q[k]*=-1
+            animation['channels'].append({'sampler':len(animation['samplers']),'target':{'node':start+idx,'path':'rotation'}})
+            animation['samplers'].append({'input':add(keys[:,0].astype('<f4'),5126,'SCALAR',bounds=True),'output':add(q,5126,'VEC4'),'interpolation':'LINEAR'})
+        j['animations'].append(animation)
     while len(b)%4:b.append(0)
     j['buffers'][0]['byteLength']=len(b);s=json.dumps(j,separators=(',',':'),ensure_ascii=True).encode();s+=b' '*((-len(s))%4)
     return struct.pack('<4sII',b'glTF',2,28+len(s)+len(b))+struct.pack('<II',len(s),0x4e4f534a)+s+struct.pack('<II',len(b),0x004e4942)+b
