@@ -36,4 +36,4 @@ def compare(reference,vertices,faces):
 
 def prefer(best,new):
     # Do not trade away a large amount of visible source to gain overlap.
-    return new['score']>best['score']+.012 and new['recall']>=best['recall']-.03 and not (new['severe'] and not best['severe'])
+    return (new['score']>best['score']+.012 or (best['warning'] and not new['warning'] and new['score']>=best['score'])) and new['recall']>=best['recall']-.03 and not (new['severe'] and not best['severe'])
