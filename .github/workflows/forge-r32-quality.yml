@@ -1,0 +1,68 @@
+name: Forge R32 SD Turbo reference quality comparison
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r23-real-inference-test]
+    paths: [.github/workflows/forge-r32-quality.yml]
+permissions:
+  contents: read
+jobs:
+  research-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU runtime
+        run: |
+          mkdir -p r32-proof
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' pillow==10.4.0 diffusers==0.30.3 transformers==4.46.3 accelerate==0.34.2 'huggingface-hub<1' safetensors
+      - name: Noncommercial research quality comparison
+        run: |
+          python -u - <<'PY'
+          import json,traceback,time,hashlib
+          from pathlib import Path
+          import numpy as np
+          from PIL import Image
+          import torch
+          from diffusers import AutoPipelineForText2Image
+          from huggingface_hub import snapshot_download
+          out=Path('r32-proof')
+          report={'mock':False,'model':'stabilityai/sd-turbo','scope':'research comparison, no commercial deployment','results':[],'success':False,'visual_review_required':True}
+          subjects={'table':'Red wooden table with four legs, no drawer.', 'chair':'A green wooden chair with no armrests', 'ball':'Draw a metallic red ball without writing'}
+          try:
+              path=snapshot_download(report['model'],allow_patterns=['model_index.json','README.md','LICENSE*','scheduler/*','tokenizer/*','unet/config.json','unet/diffusion_pytorch_model.safetensors','vae/config.json','vae/diffusion_pytorch_model.safetensors','text_encoder/config.json','text_encoder/model.safetensors','feature_extractor/*'])
+              torch.set_num_threads(2)
+              pipe=AutoPipelineForText2Image.from_pretrained(path,local_files_only=True,torch_dtype=torch.float32).to('cpu')
+              for name,subject in subjects.items():
+                  for seed in ([42,123] if name!='ball' else [42]):
+                      prompt=subject+', single complete object, entirely inside the frame, generous empty margins on all sides, centered, plain neutral background, no cropping'
+                      start=time.monotonic()
+                      with torch.inference_mode():
+                          im=pipe(prompt=prompt,num_inference_steps=4,guidance_scale=0.,width=512,height=512,generator=torch.Generator(device='cpu').manual_seed(seed)).images[0]
+                      assert isinstance(im,Image.Image) and im.size==(512,512) and np.asarray(im).std()>4
+                      f=out/(name+'-'+str(seed)+'.png');im.convert('RGB').save(f)
+                      report['results'].append(dict(name=name,seed=seed,prompt=prompt,steps=4,seconds=round(time.monotonic()-start,2),sha256=hashlib.sha256(f.read_bytes()).hexdigest()))
+                      (out/'report.json').write_text(json.dumps(report,indent=2))
+              assert len({r['sha256'] for r in report['results']})==5
+              report['success']=True
+          except Exception:
+              report['error']=traceback.format_exc()
+              raise
+          finally:
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print(json.dumps(report),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r32-turbo-proof
+          path: r32-proof/
+          retention-days: 7
