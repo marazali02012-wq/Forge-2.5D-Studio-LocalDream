@@ -39,7 +39,12 @@ def gait(pts,parents,spec,duration):
             contacts.append((side,float(t),phase<stance,target.tolist()))
         for side in 'lr':
             sh,el=roles[side+'s'],roles[side+'e']; arm=pts[el]-pts[sh]; swing=sign*22*np.cos(2*np.pi*(t+(side=='r')*.5)); horizontal=abs(arm[0])>2*abs(arm[1]); z=-np.sign(arm[0])*75 if horizontal else 0
-            rotations[sh].append(Rotation.from_euler('XYZ',[swing,0,z],degrees=True).as_quat());rotations[el].append(Rotation.from_euler('XYZ',[0,(-1 if side=='r' else 1)*(-15) if horizontal else 0,0],degrees=True).as_quat() if horizontal else Rotation.from_euler('X',-sign*15,degrees=True).as_quat())
+            if not horizontal and arm[1]<0 and abs(arm[0])>.35*np.linalg.norm(arm):
+                # A-pose: bring outward upper arm near the side before swinging.
+                angle=np.degrees(np.arctan2(abs(arm[0]),-arm[1]));lower=-np.sign(arm[0])*max(0.,angle-12.)
+                shoulder=Rotation.from_euler('X',swing,degrees=True)*Rotation.from_euler('Z',lower,degrees=True)
+            else:shoulder=Rotation.from_euler('XYZ',[swing,0,z],degrees=True)
+            rotations[sh].append(shoulder.as_quat());rotations[el].append(Rotation.from_euler('XYZ',[0,(-1 if side=='r' else 1)*(-15) if horizontal else 0,0],degrees=True).as_quat() if horizontal else Rotation.from_euler('X',-sign*15,degrees=True).as_quat())
     tracks=[]
     for i,qs in rotations.items():
         qs=np.array(qs,dtype=np.float32)

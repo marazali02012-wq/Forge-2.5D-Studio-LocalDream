@@ -4,7 +4,7 @@ import trimesh
 from scipy.spatial import cKDTree
 from rig import unpack, accessor
 
-def propose_humanoid(raw,joint_count=21):
+def _propose_t_pose(raw,joint_count=21):
     if joint_count not in (21,26):raise ValueError("21 or 26 joints required")
     j,b=unpack(raw)
     if j.get('skins') or j.get('animations') or j.get('extensionsRequired') or len(j.get('meshes',[]))!=1 or len(j['meshes'][0]['primitives'])!=1: raise ValueError('Single static mesh required')
@@ -103,3 +103,12 @@ def propose_humanoid(raw,joint_count=21):
         rows=extended
     test_joint=next(i for i,r in enumerate(rows) if r['name']=='L Elbow')
     return {'guide':{'joints':rows,'test_joint':test_joint,'axis':'x','degrees':25,**({'weight_method':'bilateral_leg_guard'} if joint_count==26 else {})},'requires_review':True,'anatomical':False,'method':'geometry_t_pose','joint_count':len(rows),'bone_links':len(rows)-1,'facing':facing}
+
+
+def propose_humanoid(raw,joint_count=21):
+    """Preserve the validated T path; try the separate conservative A path on geometric rejection."""
+    try:return _propose_t_pose(raw,joint_count)
+    except ValueError as t_error:
+        from auto_rig_a import propose_a_pose
+        try:return propose_a_pose(raw,joint_count)
+        except ValueError as a_error:raise ValueError(f'T: {t_error}; A: {a_error}') from a_error
