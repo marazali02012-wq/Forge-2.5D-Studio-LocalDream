@@ -1,0 +1,112 @@
+name: Forge Studio TripoSR CPU proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-triposr-cpu.yml]
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      HF_HUB_DISABLE_XET: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU runtime
+        run: |
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' omegaconf==2.3.0 pillow==10.4.0 einops==0.7.0 transformers==4.35.0 trimesh==4.5.3 'huggingface-hub<1' imageio rembg onnxruntime scikit-image==0.24.0 xatlas==0.0.9 moderngl==5.10.0
+      - name: Official model with CPU marching cubes and EGL texture baking
+        run: |
+          mkdir -p cpu-proof
+          git clone --depth 1 https://github.com/VAST-AI-Research/TripoSR.git upstream-triposr
+          git -C upstream-triposr rev-parse HEAD | tee cpu-proof/upstream-commit.txt
+          cat > upstream-triposr/torchmcubes.py <<'PY'
+          # CPU-compatible marching cubes; upstream helper expects x/z swapped.
+          import torch
+          import numpy as np
+          from skimage.measure import marching_cubes as mc
+          def marching_cubes(volume, level):
+              verts,faces,_,_=mc(volume.detach().cpu().numpy(),level=level,gradient_direction='ascent',allow_degenerate=False)
+              return torch.from_numpy(verts[:,::-1].copy()).float(),torch.from_numpy(faces.copy().astype(np.int64))
+          PY
+          cat > upstream-triposr/forge_cpu.py <<'PY'
+          from pathlib import Path
+          import json,time,urllib.request,struct,hashlib
+          import numpy as np
+          from PIL import Image
+          import torch,trimesh,moderngl
+          from tsr.system import TSR
+          from tsr.utils import resize_foreground
+          from tsr.bake_texture import bake_texture
+          root=Path('../cpu-proof').resolve()
+          report={'model':'stabilityai/TripoSR','device':'cpu','mock':False,'resolution':96,'texture_resolution':512,'models':[],'success':False}
+          t0=time.monotonic()
+          try:
+              torch.set_num_threads(4)
+              torch.set_num_interop_threads(1)
+              model=TSR.from_pretrained('stabilityai/TripoSR',config_name='config.yaml',weight_name='model.ckpt').to('cpu').eval()
+              model.renderer.set_chunk_size(4096)
+              original=moderngl.create_context
+              moderngl.create_context=lambda *a,**kw: original(*a,**dict(kw,backend='egl'))
+              for name in ('axe','otter_samurai'):
+                  item={'name':name}
+                  report['models'].append(item)
+                  start=time.monotonic()
+                  source=root/(name+'.png')
+                  urllib.request.urlretrieve('https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/'+name+'.png',source)
+                  rgba=Image.open(source).convert('RGBA')
+                  assert rgba.getchannel('A').getextrema()[0]<255,'Example is not transparent'
+                  rgba=resize_foreground(rgba,0.85)
+                  arr=np.asarray(rgba).astype(np.float32)/255.
+                  rgb=arr[:,:,:3]*arr[:,:,3:]+.5*(1-arr[:,:,3:])
+                  image=Image.fromarray(np.uint8(rgb*255))
+                  with torch.inference_mode():
+                      code=model([image],device='cpu')
+                      mesh=model.extract_mesh(code,False,resolution=96)[0]
+                      assert len(mesh.faces)>500 and len(mesh.vertices)>300
+                      assert np.all(np.isfinite(mesh.vertices)) and np.min(mesh.extents)>0.01
+                      if mesh.volume<0:mesh.invert()
+                      baked=bake_texture(mesh,model,code[0],512)
+                  texture=Image.fromarray(np.uint8(np.clip(baked['colors'],0,1)*255)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                  uv=np.asarray(baked['uvs'])
+                  vm=np.asarray(baked['vmapping'])
+                  visual=trimesh.visual.texture.TextureVisuals(uv=uv,material=trimesh.visual.material.PBRMaterial(baseColorTexture=texture,metallicFactor=0.,roughnessFactor=1.))
+                  m=trimesh.Trimesh(vertices=mesh.vertices[vm],faces=baked['indices'],vertex_normals=mesh.vertex_normals[vm],visual=visual,process=False)
+                  dest=root/(name+'.glb')
+                  m.export(dest)
+                  b=dest.read_bytes()
+                  assert b[:4]==b'glTF' and struct.unpack_from('<I',b,8)[0]==len(b)
+                  j=json.loads(b[20:20+struct.unpack_from('<I',b,12)[0]])
+                  prims=[p for m in j['meshes'] for p in m['primitives']]
+                  assert any('POSITION' in p['attributes'] and 'TEXCOORD_0' in p['attributes'] for p in prims)
+                  assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j['materials'])
+                  assert any('bufferView' in im for im in j['images'])
+                  item.update(success=True,seconds=round(time.monotonic()-start,2),vertices=len(mesh.vertices),faces=len(mesh.faces),extents=mesh.extents.tolist(),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+                  print('CPU_MODEL '+json.dumps(item),flush=True)
+              report['success']=len(report['models'])==2 and all(x.get('success') for x in report['models']) and len({x['sha256'] for x in report['models']})==2
+          except Exception as e:
+              import traceback
+              traceback.print_exc()
+              report['error']=str(e)
+          finally:
+              report['seconds']=round(time.monotonic()-t0,2)
+              (root/'report.json').write_text(json.dumps(report,indent=2))
+              print('CPU_REPORT '+json.dumps(report),flush=True)
+          if not report['success']:raise SystemExit(1)
+          PY
+          cd upstream-triposr
+          python -u forge_cpu.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-triposr-cpu-proof
+          path: cpu-proof/
