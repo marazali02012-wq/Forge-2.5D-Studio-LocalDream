@@ -26,10 +26,15 @@ def split_mesh(raw,j):
     ordered=sorted(range(count),key=lambda x:(-counts[x],x));total=max(float(areas.sum()),1e-20)
     return m,labels,ordered,[{'id':i,'triangles':int(counts[x]),'area_percent':round(float(areas[x]/total*100),3)} for i,x in enumerate(ordered)]
 
-def component_operation(raw,j,index=None):
+def component_operation(raw,j,index=None,prune=False):
     m,labels,ordered,rows=split_mesh(raw,j)
+    for row in rows: row['micro_candidate']=bool(row['id']>0 and row['triangles']<=64 and row['area_percent']<=0.05)
     if index is None:return {'parts':rows,'triangles':len(m.faces),'semantic':False}
     if not 0<=index<len(ordered):raise ValueError('Part out of range')
-    selected=np.flatnonzero(labels==ordered[index]);part=m.submesh([selected],append=True,repair=False)
+    if prune:
+        if not rows[index]['micro_candidate']:raise ValueError('Only explicitly selected micro islands can be removed')
+        selected=np.flatnonzero(labels!=ordered[index])
+    else:selected=np.flatnonzero(labels==ordered[index])
+    part=m.submesh([selected],append=True,repair=False)
     if len(part.faces)!=len(selected):raise ValueError('Part triangle mismatch')
     return part.export(file_type='glb')
