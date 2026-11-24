@@ -25,7 +25,7 @@ def generate_checked(rgba,texture,resolution=96):
     ref=source_mask(rgba)
     attempts=[]; best=None; mesh=None; best_code=None
     # Change input framing as well as extraction. Each alternate is a real AI inference.
-    configs=[(0.85,resolution,25),(0.94,min(160,max(resolution,128)),25),(0.72,min(160,max(resolution,128)),25)]
+    configs=[(0.85,resolution,25),(0.94,max(resolution,128),25),(0.72,max(resolution,128),25)]
     with torch.inference_mode():
         for framing,r,t in configs:
             try:
