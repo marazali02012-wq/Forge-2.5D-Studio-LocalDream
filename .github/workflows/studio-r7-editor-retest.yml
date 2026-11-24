@@ -1,0 +1,107 @@
+name: Forge Studio R7 editor retest after NumPy compatibility repair
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-r7-editor-retest.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  editor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-r5-http-proof
+          run-id: 45434446440
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: input-proof
+      - name: Build full Docker service and test conversions
+        run: |
+          mkdir -p r7-editor-proof
+          docker build -t forge-r7 studio
+          export FORGE_PASSWORD=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+          docker run --rm -d --name forge-r7 -p 127.0.0.1:7860:7860 -e FORGE_PASSWORD forge-r7
+          trap 'docker logs forge-r7 > r7-editor-proof/server.log 2>&1 || true; docker stop forge-r7 || true' EXIT
+          pip install requests pillow playwright 'trimesh==4.5.3' 'numpy<2'
+          python -m playwright install chromium
+          python -u - <<'PY'
+          import os, json, struct, time, urllib.request, hashlib, io, zipfile
+          from pathlib import Path
+          import requests, trimesh
+          from playwright.sync_api import sync_playwright
+          out=Path('r7-editor-proof')
+          base='http://127.0.0.1:7860'
+          auth=('forge',os.environ['FORGE_PASSWORD'])
+          report={'container':True,'decimation':False,'fbx':False,'rig_animation_playback':False,'success':False}
+          def glb(b):
+              assert b[:4]==b'glTF' and struct.unpack_from('<I',b,8)[0]==len(b)
+              j=json.loads(b[20:20+struct.unpack_from('<I',b,12)[0]])
+              return j
+          def count(j):
+              return sum(j['accessors'][p['indices']]['count']//3 if 'indices' in p else j['accessors'][p['attributes']['POSITION']]['count']//3 for m in j['meshes'] for p in m['primitives'])
+          try:
+              for _ in range(60):
+                  try:
+                      if requests.get(base+'/api/model/capabilities',auth=auth,timeout=2).ok:break
+                  except requests.RequestException:pass
+                  time.sleep(1)
+              else:raise RuntimeError('Container not reachable')
+              assert requests.get(base).status_code==401
+              assert requests.get(base+'/api/model/capabilities',auth=auth).json()['fbx']
+              # Use a real CPU-generated R5 model; no fabricated mesh.
+              source=next(Path('input-proof').rglob('otter_samurai.glb'))
+              original=source.read_bytes();before=count(glb(original))
+              r=requests.post(base+'/api/model/blender?operation=reduce&target=5000',auth=auth,headers={'Content-Type':'model/gltf-binary'},data=original,timeout=200)
+              assert r.ok,r.text[:400]
+              after_j=glb(r.content);after=count(after_j)
+              assert 0<after<before,(before,after)
+              assert any('TEXCOORD_0' in p['attributes'] for m in after_j['meshes'] for p in m['primitives'])
+              assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in after_j['materials'])
+              (out/'reduced.glb').write_bytes(r.content)
+              report.update(decimation=True,faces_before=before,faces_after=after)
+              f=requests.post(base+'/api/model/blender?operation=fbx&target=5000',auth=auth,headers={'Content-Type':'model/gltf-binary'},data=r.content,timeout=200)
+              assert f.ok and f.content.startswith(b'Kaydara FBX Binary'),f.status_code
+              (out/'converted.fbx').write_bytes(f.content)
+              report['fbx']=True
+              rig=out/'CesiumMan.glb'
+              urllib.request.urlretrieve('https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb',rig)
+              meta=glb(rig.read_bytes());assert meta['skins'] and meta['animations']
+              assert requests.post(base+'/api/model/blender?operation=reduce&target=1000',auth=auth,headers={'Content-Type':'model/gltf-binary'},data=rig.read_bytes(),timeout=30).status_code==400
+              with sync_playwright() as pw:
+                  browser=pw.chromium.launch(headless=True,args=['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+                  page=browser.new_page(viewport={'width':390,'height':844},http_credentials={'username':auth[0],'password':auth[1]})
+                  page.goto(base)
+                  page.locator('#tabWorkspace').click()
+                  page.locator('#modelInput').set_input_files(str(rig))
+                  page.wait_for_function('!document.querySelector("#advanced").disabled',timeout=30000)
+                  page.locator('details').filter(has_text='Gelişmiş PBR').locator('summary').click()
+                  page.locator('#advanced').click()
+                  page.wait_for_function('!document.querySelector("#playClip").disabled',timeout=90000)
+                  page.locator('#playClip').click()
+                  page.wait_for_function('document.querySelector("model-viewer")?.currentTime > 0.1',timeout=20000)
+                  page.locator('#pauseClip').click()
+                  report['rig_animation_playback']=True
+                  report['animation_names']=page.locator('#clip option').all_text_contents()
+                  page.screenshot(path=str(out/'rig-playback.png'),full_page=True)
+                  browser.close()
+              report['success']=all(report[k] for k in ('decimation','fbx','rig_animation_playback'))
+          except Exception as e:
+              report['error']=str(e)[:2000]
+              raise
+          finally:
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print('R7_EDITOR '+json.dumps(report),flush=True)
+          if not report['success']:raise SystemExit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r7-editor-proof
+          path: r7-editor-proof/
