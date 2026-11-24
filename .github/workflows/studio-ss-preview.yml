@@ -1,0 +1,94 @@
+name: Forge Studio actual 2K preview and part API regression
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-ss-preview.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: forge-ss-detail-*
+          run-id: 45444317797
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: input
+      - name: Actual browser, no mocked API
+        run: |
+          pip install fastapi uvicorn pillow scipy 'numpy<2' trimesh==4.5.3 playwright requests
+          python -m playwright install chromium
+          mkdir -p preview-proof
+          export FORGE_PASSWORD=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+          export FORGE_REQUIRE_AUTH=1
+          python -m uvicorn server:app --app-dir studio --host 127.0.0.1 --port 7860 > preview-proof/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          python -u - <<'PY'
+          import os,json,time,hashlib
+          from pathlib import Path
+          import requests
+          from playwright.sync_api import sync_playwright
+          base='http://127.0.0.1:7860';auth=('forge',os.environ['FORGE_PASSWORD']);out=Path('preview-proof');report=[]
+          for _ in range(30):
+              try:
+                  if requests.get(base,auth=auth,timeout=1).ok:break
+              except requests.RequestException:pass
+              time.sleep(1)
+          else:raise RuntimeError('Server unavailable')
+          assert requests.get(base).status_code==401
+          try:
+              with sync_playwright() as pw:
+                  browser=pw.chromium.launch(headless=True,args=['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+                  ctx=browser.new_context(viewport={'width':390,'height':844},accept_downloads=True,http_credentials={'username':auth[0],'password':auth[1]})
+                  page=ctx.new_page()
+                  page.add_init_script("window.textureUploads=[];const orig=WebGL2RenderingContext.prototype.texImage2D;WebGL2RenderingContext.prototype.texImage2D=function(...a){const x=a[5];if(a.length===6&&x&&x.width)textureUploads.push([x.width,x.height]);return orig.apply(this,a)};")
+                  errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                  page.goto(base)
+                  files=sorted(Path('input').rglob('*.glb'));assert len(files)==4
+                  for source in files:
+                      item={'name':source.stem,'success':False};report.append(item)
+                      page.locator('#modelInput').set_input_files(str(source))
+                      page.wait_for_function('!document.querySelector("#export").disabled && document.querySelector("#cancel").disabled',timeout=45000)
+                      assert not page.locator('#previewResolution').is_disabled(),page.locator('#stats').inner_text()
+                      assert '2048×2048 → 1024×1024' in page.locator('#previewInfo').inner_text()
+                      for mode in ('1024','2048'):
+                          if mode=='2048':
+                              page.locator('#previewResolution').select_option(mode)
+                              page.wait_for_function('document.querySelector("#cancel").disabled',timeout=45000)
+                          assert f'2048×2048 → {mode}×{mode}' in page.locator('#previewInfo').inner_text()
+                          assert [int(mode),int(mode)] in page.evaluate('textureUploads')
+                          for angle in ('front','side','back','leftView','topView'):
+                              page.locator('#'+angle).click()
+                              page.locator('#view').screenshot(path=str(out/(source.stem+'-'+mode+'-'+angle+'.png')))
+                      page.locator('details').filter(has_text='Geometri adalarını incele').evaluate('(d)=>d.open=true')
+                      with page.expect_response(lambda r:'/api/model/components?index=-1' in r.url,timeout=45000) as pending:page.locator('#partScan').click()
+                      response=pending.value;assert response.ok,response.text()
+                      result=response.json();assert sum(x['triangles'] for x in result['parts'])==result['triangles']
+                      page.wait_for_function('!document.querySelector("#partExport").disabled',timeout=45000)
+                      with page.expect_download(timeout=45000) as dl:page.locator('#partExport').click()
+                      assert Path(dl.value.path()).read_bytes()[:4]==b'glTF'
+                      with page.expect_download() as dl:page.locator('#export').click()
+                      assert Path(dl.value.path()).read_bytes()==source.read_bytes()
+                      page.locator('#previewInfo').scroll_into_view_if_needed();page.screenshot(path=str(out/(source.stem+'-ui.png')))
+                      page.locator('#clearModel').click();assert page.locator('#previewResolution').is_disabled() and page.locator('#partExport').is_disabled()
+                      item.update(success=True,parts=len(result['parts']),actual_texture_uploads=[1024,2048],original_exact=True)
+                      print('PREVIEW '+json.dumps(item),flush=True)
+                  assert not errors,errors
+                  browser.close()
+          finally:
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-2k-preview-proof
+          path: preview-proof/
