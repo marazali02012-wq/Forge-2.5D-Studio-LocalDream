@@ -1,0 +1,112 @@
+name: Forge R39 density retry and multi-angle geometry verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r23-real-inference-test]
+    paths: [.github/workflows/forge-r39-chain.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-r34-sd15-proof
+          run-id: 45479317768
+          github-token: ${{ github.token }}
+          path: r39-input
+      - name: Install CPU runtime and local weights
+        run: |
+          mkdir -p r39-proof studio/models
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' omegaconf==2.3.0 pillow==10.4.0 einops==0.7.0 transformers==4.35.0 trimesh==4.5.3 'huggingface-hub<1' imageio rembg onnxruntime scikit-image==0.24.0 xatlas==0.0.9 moderngl==5.10.0 fastapi uvicorn playwright
+          git clone https://github.com/VAST-AI-Research/TripoSR.git studio/upstream-triposr
+          git -C studio/upstream-triposr checkout --detach 107cefdc244c39106fa830359024f6a2f1c78871
+          cat > studio/upstream-triposr/torchmcubes.py <<'PY'
+          import torch,numpy as np
+          from skimage.measure import marching_cubes as mc
+          def marching_cubes(volume,level):
+              v,f,_,_=mc(volume.detach().cpu().numpy(),level=level,gradient_direction='ascent',allow_degenerate=False)
+              return torch.from_numpy(v[:,::-1].copy()).float(),torch.from_numpy(f.copy().astype(np.int64))
+          PY
+          curl --fail --location --retry 2 -o studio/models/u2netp.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx
+          python studio/triposr_setup.py download
+          python -m playwright install --with-deps chromium
+      - name: Actual density retry and textured neural geometry
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+        run: |
+          cd studio
+          python -u - <<'PY'
+          import json,hashlib,io,time,traceback
+          from pathlib import Path
+          import numpy as np
+          from PIL import Image
+          import mask_ai
+          import engine
+          from playwright.sync_api import sync_playwright
+          out=Path('../r39-proof').resolve()
+          source=Path('../r39-input/ball-42.png')
+          report={'mock':False,'success':False,'source_prompt':'Draw a metallic red ball without writing','source_run':45479317768,'scope':'recorded generated image to real mask to GLB; not a live unified application call','visual_review_required':True}
+          try:
+              assert hashlib.sha256(source.read_bytes()).hexdigest()=='8aac47ff5c0c676dd644d73e63189e432226b25aaa463958d2becd345bf1b5b5'
+              rgb=Image.open(source).convert('RGB')
+              rgb.save(out/'source.png')
+              assert mask_ai.diagnose()['configured'],mask_ai.diagnose()
+              start=time.monotonic()
+              mask=mask_ai.mask_image(rgb)
+              (out/'masked.png').write_bytes(mask)
+              rgba=Image.open(io.BytesIO(mask)).convert('RGBA')
+              a=np.asarray(rgba)[:,:,3]; fg=a>=128
+              assert 0.01<fg.mean()<0.995
+              report.update(mask_seconds=round(time.monotonic()-start,2),foreground_fraction=float(fg.mean()),edge_touch=bool(fg[0].any() or fg[-1].any() or fg[:,0].any() or fg[:,-1].any()))
+              start=time.monotonic()
+              raw,qa=engine.generate_checked(rgba,512,96)
+              file=out/'ball.glb';file.write_bytes(raw)
+              import struct
+              j=json.loads(raw[20:20+struct.unpack_from('<I',raw,12)[0]])
+              assert raw[:4]==b'glTF'
+              assert any('TEXCOORD_0' in p['attributes'] for m in j['meshes'] for p in m['primitives'])
+              assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j['materials'])
+              report.update(mesh_seconds=round(time.monotonic()-start,2),qa=qa,bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+              with sync_playwright() as pw:
+                  b=pw.chromium.launch(headless=True,args=['--disable-webgl'])
+                  p=b.new_page(viewport={'width':1280,'height':800})
+                  errs=[];p.on('pageerror',lambda e:errs.append(str(e)))
+                  p.set_content(Path('index.html').read_text())
+                  p.locator('#modelInput').set_input_files(str(file))
+                  p.wait_for_function('!!model&&!job',timeout=90000)
+                  for angle in ('front','side','back','leftView','topView'):
+                      p.locator('#'+angle).click()
+                      p.locator('#view').screenshot(path=str(out/(angle+'.png')))
+                  assert not errs,errs
+                  b.close()
+              report['success']=True
+              report['quality_gate_pass']=bool(qa['geometry']['shape_diagnostics'] and qa['geometry']['shape_diagnostics']['hull_fill']>=.95 and qa['geometry']['shape_diagnostics']['radial_p05_p95']>=.90 and not qa['geometry']['review_topology'] and qa['best']['iou']>=.90)
+              report['quality_gate_scope']='sphere benchmark only; visual review still required'
+          except Exception:
+              report['error']=traceback.format_exc()
+              raise
+          finally:
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print(json.dumps(report),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r39-real-chain
+          path: r39-proof/
+          retention-days: 7
