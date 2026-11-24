@@ -46,8 +46,8 @@ def validate_glb(b):
     if not any('bufferView' in i for i in j.get('images',[])):raise ValueError('No embedded texture')
 @app.post('/api/triposr/generate')
 async def generate(request:Request,texture:int=512,resolution:int=96):
-    if resolution not in (96,128,160):raise HTTPException(400,'Geometri çözünürlüğü 96, 128 veya 160 olmalı.')
-    if texture not in (512,1024):raise HTTPException(400,'Doku boyutu 512 veya 1024 olmalı.')
+    if resolution not in (96,128,160,256):raise HTTPException(400,'Geometri çözünürlüğü 96, 128, 160 veya 256 olmalı.')
+    if texture not in (512,1024,2048):raise HTTPException(400,'Doku boyutu 512, 1024 veya 2048 olmalı.')
     if request.headers.get('content-type','').split(';')[0]!='image/png':raise HTTPException(415,'PNG gerekli.')
     if not busy.acquire(blocking=False):raise HTTPException(409,'CPU motoru meşgul.')
     try:
