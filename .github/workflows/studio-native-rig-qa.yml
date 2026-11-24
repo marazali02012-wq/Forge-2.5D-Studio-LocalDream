@@ -1,0 +1,97 @@
+name: Forge native skeletal playback and real rig API
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-native-rig-qa.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  rig:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-ss-detail-characters
+          run-id: 45444317797
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: input
+      - name: Real HTTP rig creation and native GPU playback
+        run: |
+          pip install fastapi uvicorn pillow scipy 'numpy<2' trimesh==4.5.3 playwright requests
+          python -m playwright install chromium
+          mkdir -p rig-proof
+          export FORGE_PASSWORD=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+          export FORGE_REQUIRE_AUTH=1
+          python -m uvicorn server:app --app-dir studio --host 127.0.0.1 --port 7860 > rig-proof/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          python -u - <<'PY'
+          import os,json,time,sys
+          from pathlib import Path
+          import numpy as np,requests
+          from playwright.sync_api import sync_playwright
+          sys.path.insert(0,'studio')
+          import rig
+          base='http://127.0.0.1:7860';auth=('forge',os.environ['FORGE_PASSWORD']);out=Path('rig-proof')
+          for _ in range(30):
+              try:
+                  if requests.get(base,auth=auth,timeout=1).ok:break
+              except requests.RequestException:pass
+              time.sleep(1)
+          else:raise RuntimeError('Server unavailable')
+          source=next(Path('input').rglob('raccoon_wizard.glb'))
+          guide={'joints':[dict(name=name,parent=par,position=pos) for name,par,pos in [('pelvis',-1,[.52,.22,.47]),('torso',0,[.52,.44,.48]),('head',1,[.52,.62,.49]),('hat tip',2,[.53,.94,.45]),('staff hand',1,[.20,.43,.54]),('staff tip',4,[.045,.8,.55]),('other hand',1,[.77,.34,.51]),('tail',0,[.86,.09,.18])]],'test_joint':2,'axis':'y','degrees':25}
+          with sync_playwright() as pw:
+              browser=pw.chromium.launch(headless=True,args=['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+              page=browser.new_context(viewport={'width':390,'height':844},accept_downloads=True,http_credentials={'username':auth[0],'password':auth[1]}).new_page()
+              errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+              page.goto(base)
+              page.locator('#modelInput').set_input_files(str(source))
+              page.wait_for_function('!document.querySelector("#export").disabled && document.querySelector("#cancel").disabled',timeout=45000)
+              page.locator('#rigPanel').evaluate('(e)=>e.open=true')
+              page.locator('#rigGuide').fill(json.dumps(guide))
+              with page.expect_response(lambda r:'/api/model/rig' in r.url,timeout=90000) as pending:page.locator('#rigBuild').click()
+              resp=pending.value;assert resp.ok,resp.text();raw=resp.body()
+              j,b=rig.unpack(raw);orig,bb=rig.unpack(source.read_bytes());assert b[:len(bb)]==bb and len(j['skins'][0]['joints'])==8
+              page.wait_for_function('document.querySelector("#cancel").disabled',timeout=45000)
+              page.locator('#rigPanel').evaluate('(e)=>e.open=true')
+              page.locator('#nativeLoad').click()
+              page.wait_for_function('nativeState!==null',timeout=45000)
+              assert page.evaluate('!cpu')
+              for t in (0,.5,1):
+                  page.evaluate('t=>nativePose(t)',t)
+                  for view in ('front','side','back'):
+                      page.locator('#'+view).click()
+                      page.locator('#view').screenshot(path=str(out/f'{t}-{view}.png'))
+              page.evaluate('nativePose(1)')
+              displacement=page.evaluate('Math.max(...Array.from(nativeState.out.slice(0,20000),(v,i)=>Math.abs(v-nativeState.pos[i])))')
+              assert displacement>0.001
+              page.locator('#nativeRest').click()
+              page.locator('#nativePlay').click()
+              page.wait_for_function('Number(document.querySelector("#nativeTime").value)>.15',timeout=15000)
+              page.locator('#nativePlay').click();assert not page.evaluate('nativePlaying')
+              page.locator('#nativeRest').click();assert page.evaluate('Number(document.querySelector("#nativeTime").value)')==0
+              with page.expect_download() as dl:page.locator('#export').click()
+              assert Path(dl.value.path()).read_bytes()==raw
+              page.locator('#nativeInfo').scroll_into_view_if_needed();page.screenshot(path=str(out/'mobile.png'))
+              page.locator('#modelUndo').click()
+              page.wait_for_function('document.querySelector("#cancel").disabled',timeout=45000)
+              with page.expect_download() as dl:page.locator('#export').click()
+              assert Path(dl.value.path()).read_bytes()==source.read_bytes()
+              assert not errors,errors
+              browser.close()
+          (out/'rig.glb').write_bytes(raw)
+          (out/'report.json').write_text(json.dumps({'actual_http_rig':True,'webgl2':True,'native_play_pause_reset':True,'original_bin_preserved':True,'undo_exact':True,'nine_views':True},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-native-rig-proof
+          path: rig-proof/
