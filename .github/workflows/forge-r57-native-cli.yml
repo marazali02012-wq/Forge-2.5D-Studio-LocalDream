@@ -1,0 +1,32 @@
+name: R57 native TRELLIS CLI contract
+on:
+  push:
+    branches: [forge-r57-native-trellis]
+    paths: ['.github/workflows/forge-r57-native-cli.yml']
+permissions:
+  contents: read
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Download pinned upstream release and verify CLI options
+        run: |
+          mkdir -p evidence runtime
+          curl -fL --retry 2 -o runtime/release.tar.gz https://github.com/pwilkin/trellis.cpp/releases/download/v0.8.1/trellis-vulkan-linux-x64.tar.gz
+          sha256sum runtime/release.tar.gz | tee evidence/archive-sha256.txt
+          tar -xzf runtime/release.tar.gz -C runtime
+          exe=$(find runtime -type f -name trellis-cli | head -1)
+          test -n "$exe"
+          chmod +x "$exe"
+          export LD_LIBRARY_PATH="$(dirname "$exe"):${LD_LIBRARY_PATH:-}"
+          timeout 25 "$exe" --help > evidence/cli-help.txt 2>&1 || test $? -eq 1
+          cat evidence/cli-help.txt
+          for flag in --models --model --res --atlas --seed --backend --threads --steps --require-gpu; do grep -q -- "$flag" evidence/cli-help.txt || exit 1; done
+          echo 'CLI contract verified; no model files, no inference or GPU claim.' | tee evidence/scope.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r57-native-cli-contract
+          path: evidence/
+          retention-days: 7
