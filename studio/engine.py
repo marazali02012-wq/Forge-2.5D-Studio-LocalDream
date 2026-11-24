@@ -12,6 +12,7 @@ from tsr.utils import resize_foreground
 from tsr.bake_texture import bake_texture
 from quality import source_mask, compare, prefer
 from color_qa import calibrate
+from atlas_qa import pad_generated_atlas, geometry_report
 model=None
 original=moderngl.create_context
 moderngl.create_context=lambda *a,**kw:original(*a,**dict(kw,backend='egl'))
@@ -61,7 +62,10 @@ def generate_checked(rgba,texture,resolution=96):
             import logging
             logging.exception('Optional color calibration failed; original texture retained')
             color={'applied':False,'method':'bounded_global_color_gain','reason':type(e).__name__}
-    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference',color=color)
+    padded,atlas=pad_generated_atlas(m.visual.material.baseColorTexture)
+    m.visual.material.baseColorTexture=padded
+    geometry=geometry_report(mesh)
+    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference',color=color,atlas=atlas,geometry=geometry)
 
 def generate(rgba,texture,resolution=96):
     return generate_checked(rgba,texture,resolution)[0]
