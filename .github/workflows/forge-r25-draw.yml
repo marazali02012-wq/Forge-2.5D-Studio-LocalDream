@@ -1,0 +1,70 @@
+name: Forge R25 Turkish text to image real inference
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r23-real-inference-test]
+    paths: [.github/workflows/forge-r25-draw.yml]
+permissions:
+  contents: read
+jobs:
+  real-draw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU dependencies
+        run: |
+          mkdir -p r25-proof
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' pillow==10.4.0 diffusers==0.30.3 transformers==4.46.3 accelerate==0.34.2 'huggingface-hub<1' safetensors
+          pip install llama-cpp-python==0.3.2 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+      - name: Real Turkish prompt and SDXS generation
+        run: |
+          cat > /tmp/r25.py <<'PY'
+          import json,time,hashlib,traceback,gc
+          from pathlib import Path
+          from huggingface_hub import hf_hub_download,snapshot_download
+          from llama_cpp import Llama
+          from PIL import Image
+          import torch,numpy as np
+          from diffusers import AutoPipelineForText2Image
+          out=Path('r25-proof')
+          report={'mock':False,'input':'masa çiz','success':False,'scope':'model inference test; not deployed R25 API'}
+          try:
+              p=hf_hub_download('Qwen/Qwen2.5-0.5B-Instruct-GGUF','qwen2.5-0.5b-instruct-q4_k_m.gguf')
+              llm=Llama(model_path=p,n_ctx=2048,n_threads=2,n_gpu_layers=0,verbose=False)
+              r=llm.create_chat_completion(messages=[{'role':'system','content':'Write a concise English image-generation prompt for a single isolated 3D asset reference. Keep the requested subject, colors and materials; prefer a clean background and a three-quarter view. No additional objects unless requested. Return only the prompt, without explanation. Maximum 1000 characters.'},{'role':'user','content':report['input']}],max_tokens=220,temperature=0.2)
+              prompt=r['choices'][0]['message']['content'].strip()
+              report['refined_prompt']=prompt
+              assert 1<=len(prompt)<=1000 and 'table' in prompt.lower(), 'Turkish meaning not preserved'
+              llm.close();del llm;gc.collect()
+              model=snapshot_download('IDKiro/sdxs-512-0.9',allow_patterns=['model_index.json','README.md','LICENSE*','scheduler/*','tokenizer/*','unet/config.json','unet/diffusion_pytorch_model.safetensors','vae/config.json','vae/diffusion_pytorch_model.safetensors','text_encoder/config.json','text_encoder/model.safetensors','feature_extractor/*'])
+              torch.set_num_threads(2)
+              pipe=AutoPipelineForText2Image.from_pretrained(model,local_files_only=True,torch_dtype=torch.float32).to('cpu')
+              start=time.monotonic()
+              with torch.inference_mode():
+                  im=pipe(prompt=prompt,num_inference_steps=1,guidance_scale=0.,width=512,height=512,generator=torch.Generator(device='cpu').manual_seed(42)).images[0]
+              assert im.size==(512,512) and np.asarray(im).std()>4
+              file=out/'masa.png';im.convert('RGB').save(file)
+              report.update(success=True,seconds=round(time.monotonic()-start,2),sha256=hashlib.sha256(file.read_bytes()).hexdigest(),visual_review_required=True)
+          except Exception:
+              report['error']=traceback.format_exc()
+              raise
+          finally:
+              (out/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+              print(json.dumps(report,ensure_ascii=False),flush=True)
+          PY
+          python -u /tmp/r25.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r25-real-draw
+          path: r25-proof/
+          retention-days: 7
