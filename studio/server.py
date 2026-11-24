@@ -204,3 +204,22 @@ async def rig_api(request:Request):
         except Exception:
             logging.exception('Rig binding failed');raise HTTPException(400,'Geçerli eklem kılavuzu ve dönüştürülmemiş tek statik GLB gerekli. Hazır rig, animasyon ve çoklu mesh desteklenmez.')
     finally:busy.release()
+
+@app.post('/api/model/joint-assist')
+async def joint_assist_api(request:Request):
+    if request.headers.get('content-type','').split(';')[0]!='model/gltf-binary':raise HTTPException(415,'GLB gerekli.')
+    guide_text=request.headers.get('x-forge-rig','')
+    if not guide_text or len(guide_text)>8192:raise HTTPException(400,'Eklem kılavuzu gerekli (8 KB sınırı).')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        buf=bytearray()
+        async for chunk in request.stream():
+            if len(buf)+len(chunk)>MAX_GLB:raise HTTPException(413,'GLB 75 MB sınırı.')
+            buf.extend(chunk)
+        try:
+            from joint_assist import suggest_joints
+            raw=bytes(buf);check_embedded_model(raw)
+            return await run_in_threadpool(suggest_joints,raw,json.loads(guide_text))
+        except Exception:
+            logging.exception('Joint assistance failed');raise HTTPException(400,'Kapalı, tek, statik GLB ve geçerli eklem kılavuzu gerekli.')
+    finally:busy.release()
