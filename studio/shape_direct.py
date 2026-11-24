@@ -6,16 +6,16 @@ import argparse, json, time, io, hashlib
 from pathlib import Path
 
 def generate(model_dir,prompt,seed=42,steps=32):
-    import torch, trimesh, numpy as np
-    from diffusers import ShapEPipeline
-    from diffusers.utils import export_to_ply
-    import tempfile
     root=Path(model_dir).resolve()
     if not (root/'model_index.json').is_file():raise ValueError('Local Shap-E model missing')
     if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=500:raise ValueError('Invalid prompt')
     if steps not in (16,32,64):raise ValueError('Unsupported steps')
+    import torch, trimesh, numpy as np
+    from diffusers import ShapEPipeline
+    from diffusers.utils import export_to_ply
+    import tempfile
     torch.set_num_threads(2)
-    pipe=ShapEPipeline.from_pretrained(str(root),torch_dtype=torch.float32,local_files_only=True,use_safetensors=True).to('cpu')
+    pipe=ShapEPipeline.from_pretrained(str(root),torch_dtype=torch.float32,local_files_only=True,use_safetensors=False).to('cpu')
     start=time.monotonic()
     with torch.inference_mode():
         result=pipe(prompt.strip(),guidance_scale=15.,num_inference_steps=steps,frame_size=256,output_type='mesh',generator=torch.Generator(device='cpu').manual_seed(seed)).images[0]
