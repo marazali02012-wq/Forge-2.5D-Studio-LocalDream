@@ -105,3 +105,53 @@ def convert_obj(b):
             if Path(name).name!=name:raise ValueError('Invalid asset name')
             z.writestr(name,data)
     return out.getvalue()
+
+def check_embedded_model(b):
+    if len(b)<28 or len(b)>MAX_GLB or struct.unpack_from('<4sII',b)!=(b'glTF',2,len(b)):raise ValueError('Invalid GLB')
+    n,t=struct.unpack_from('<II',b,12)
+    if t!=0x4e4f534a or n>len(b)-28:raise ValueError('Invalid GLB JSON')
+    j=json.loads(b[20:20+n]);off=20+n
+    bl,bt=struct.unpack_from('<II',b,off)
+    if bt!=0x004e4942 or off+8+bl!=len(b):raise ValueError('Invalid binary')
+    if any('uri' in x and not str(x['uri']).startswith('data:') for x in j.get('buffers',[])+j.get('images',[])):raise ValueError('External resource')
+    if not j.get('meshes'):raise ValueError('Empty mesh')
+    return j
+
+def blender_convert(b,op,target):
+    import tempfile, subprocess, shutil
+    j=check_embedded_model(b)
+    if op=='reduce' and (j.get('skins') or j.get('animations') or any(p.get('targets') for m in j['meshes'] for p in m.get('primitives',[]))):raise ValueError('Rig, animation or morph data cannot be reduced safely')
+    exe=shutil.which('blender')
+    if not exe:raise RuntimeError('Blender not installed')
+    with tempfile.TemporaryDirectory(prefix='forge-') as d:
+        src=Path(d)/'input.glb';dest=Path(d)/('output.glb' if op=='reduce' else 'output.fbx');src.write_bytes(b)
+        res=subprocess.run([exe,'--background','--factory-startup','--disable-autoexec','-t','2','--python-exit-code','7','--python',str(ROOT/'blender_tools.py'),'--',str(src),str(dest),op,str(target)],cwd=d,capture_output=True,timeout=180,check=False)
+        if res.returncode or not dest.is_file():raise RuntimeError('Blender conversion failed: '+res.stderr.decode(errors='replace')[-300:])
+        if dest.stat().st_size>MAX_GLB:raise ValueError('Output exceeds 75 MB')
+        result=dest.read_bytes()
+        if op=='reduce':check_embedded_model(result)
+        elif not result.startswith(b'Kaydara FBX Binary'):raise ValueError('Invalid FBX')
+        return result
+
+@app.get('/api/model/capabilities')
+def capabilities():
+    import shutil
+    return {'obj':True,'reduce':bool(shutil.which('blender')),'fbx':bool(shutil.which('blender'))}
+
+@app.post('/api/model/blender')
+async def blender_api(request:Request,operation:str,target:int=5000):
+    import shutil
+    if operation not in ('reduce','fbx') or target not in (1000,5000,15000,30000):raise HTTPException(400,'Geçersiz işlem veya hedef.')
+    if not shutil.which('blender'):raise HTTPException(503,'Blender sunucuda kurulu değil.')
+    if request.headers.get('content-type','').split(';')[0]!='model/gltf-binary':raise HTTPException(415,'GLB gerekli.')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        buf=bytearray()
+        async for chunk in request.stream():
+            if len(buf)+len(chunk)>MAX_GLB:raise HTTPException(413,'GLB 75 MB sınırı.')
+            buf.extend(chunk)
+        try:result=await run_in_threadpool(blender_convert,bytes(buf),operation,target)
+        except Exception:
+            logging.exception('Blender operation failed');raise HTTPException(400,'İşlem başarısız; model veya sunucu kaydını kontrol edin.')
+        return Response(result,media_type='model/gltf-binary' if operation=='reduce' else 'application/octet-stream')
+    finally:busy.release()
