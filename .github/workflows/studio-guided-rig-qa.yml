@@ -1,0 +1,98 @@
+name: Forge Studio real guided rig and micro-island browser QA
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-guided-rig-qa.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  rig:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: forge-ss-detail-*
+          run-id: 45444317797
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: input
+      - name: Real API and browser validation
+        run: |
+          pip install fastapi uvicorn pillow scipy 'numpy<2' trimesh==4.5.3 playwright requests
+          python -m playwright install chromium
+          mkdir -p rig-proof
+          export FORGE_PASSWORD=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+          export FORGE_REQUIRE_AUTH=1
+          python -m uvicorn server:app --app-dir studio --host 127.0.0.1 --port 7860 > rig-proof/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          python -u - <<'PY'
+          import os,time,json,struct,sys
+          from pathlib import Path
+          import numpy as np, requests
+          from playwright.sync_api import sync_playwright
+          sys.path.insert(0,'studio')
+          from rig import unpack,accessor
+          base='http://127.0.0.1:7860';auth=('forge',os.environ['FORGE_PASSWORD']);out=Path('rig-proof')
+          for _ in range(30):
+              try:
+                  if requests.get(base,auth=auth,timeout=1).ok:break
+              except requests.RequestException:pass
+              time.sleep(1)
+          else:raise RuntimeError('server unavailable')
+          guide={'joints':[dict(name=n,parent=p,position=x) for n,p,x in [('pelvis',-1,[.52,.22,.47]),('torso',0,[.52,.44,.48]),('head',1,[.52,.62,.49]),('hat tip',2,[.53,.94,.45]),('staff hand',1,[.20,.43,.54]),('staff tip',4,[.045,.8,.55]),('other hand',1,[.77,.34,.51]),('tail',0,[.86,.09,.18])]],'test_joint':2,'axis':'y','degrees':25}
+          with sync_playwright() as pw:
+              browser=pw.chromium.launch(headless=True,args=['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+              ctx=browser.new_context(viewport={'width':390,'height':844},accept_downloads=True,http_credentials={'username':auth[0],'password':auth[1]})
+              page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept())
+              page.goto(base)
+              def load(name):
+                  src=next(Path('input').rglob(name+'.glb'));page.locator('#modelInput').set_input_files(str(src))
+                  page.wait_for_function('!document.querySelector("#export").disabled && document.querySelector("#cancel").disabled',timeout=45000)
+                  return src.read_bytes()
+              def downloaded():
+                  with page.expect_download(timeout=45000) as dl:page.locator('#export').click()
+                  return Path(dl.value.path()).read_bytes()
+              for name in ['chair1','stylized-rocks']:
+                  raw=load(name);page.locator('details').filter(has_text='Geometri adalarını incele').evaluate('(e)=>e.open=true')
+                  with page.expect_response(lambda r:'/api/model/components?index=-1' in r.url,timeout=45000) as pending:page.locator('#partScan').click()
+                  rows=pending.value.json()['parts'];micro=[x for x in rows if x['micro_candidate']];assert len(micro)==1
+                  page.locator('#partSelect').select_option(str(micro[0]['id']))
+                  with page.expect_response(lambda r:'/api/model/components?' in r.url and 'prune=true' in r.url,timeout=45000) as p:page.locator('#partPrune').click()
+                  assert p.value.ok,p.value.text()
+                  page.wait_for_function('document.querySelector("#cancel").disabled',timeout=45000)
+                  j,b=unpack(downloaded());k,old=unpack(raw);assert j['accessors'][j['meshes'][0]['primitives'][0]['indices']]['count']==k['accessors'][k['meshes'][0]['primitives'][0]['indices']]['count']-micro[0]['triangles']*3
+                  page.locator('#front').click();page.locator('#view').screenshot(path=str(out/(name+'-clean.png')))
+                  page.locator('#modelUndo').click();page.wait_for_function('document.querySelector("#cancel").disabled',timeout=45000);assert downloaded()==raw
+              raw=load('raccoon_wizard');page.locator('#rigPanel').evaluate('(e)=>e.open=true');page.locator('#rigGuide').fill(json.dumps(guide))
+              with page.expect_response(lambda r:'/api/model/rig' in r.url,timeout=90000) as p:page.locator('#rigBuild').click()
+              assert p.value.ok,p.value.text()
+              page.wait_for_function('document.querySelector("#cancel").disabled',timeout=45000)
+              bound=downloaded();j,b=unpack(bound);old,bb=unpack(raw);assert b[:len(bb)]==bb
+              a=j['meshes'][0]['primitives'][0]['attributes'];weights=accessor(j,b,a['WEIGHTS_0']);assert np.allclose(weights.sum(1),1,atol=1e-6)
+              assert len(j['skins'][0]['joints'])==8 and len(j['animations'])==1
+              (out/'wizard-rig.glb').write_bytes(bound);page.locator('#rigPanel').scroll_into_view_if_needed();page.screenshot(path=str(out/'rig-panel.png'))
+              page.locator('details').filter(has_text='Gelişmiş PBR ve animasyon inceleme').evaluate('(e)=>e.open=true');page.locator('#advanced').click()
+              page.wait_for_function('!document.querySelector("#playClip").disabled',timeout=65000)
+              page.locator('#playClip').click();mv=page.locator('model-viewer');page.wait_for_function('document.querySelector("model-viewer").currentTime > 0.15',timeout=15000)
+              page.locator('#pauseClip').click()
+              for t in (0,1):
+                  mv.evaluate('(m,t)=>{m.currentTime=t}',t);page.wait_for_timeout(600);assert abs(mv.evaluate('(m)=>m.currentTime')-t)<.1
+                  mv.screenshot(path=str(out/('rig-pose-'+str(t)+'.png')))
+              assert (out/'rig-pose-0.png').read_bytes()!=(out/'rig-pose-1.png').read_bytes()
+              page.locator('#modelUndo').click();page.wait_for_function('document.querySelector("#cancel").disabled',timeout=45000);assert downloaded()==raw
+              assert not errors,errors
+              print('RIG_QA',json.dumps({'vertices':len(weights),'joints':8,'actual_clip_playback':True,'original_binary_preserved':True,'micro_prune_undo':True,'automatic_anatomy':False}))
+              browser.close()
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-guided-rig-proof
+          path: rig-proof/
