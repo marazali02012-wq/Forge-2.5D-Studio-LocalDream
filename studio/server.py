@@ -34,8 +34,8 @@ def home():return FileResponse(ROOT/'index.html')
 @app.get('/api/triposr/status')
 def status():return {'engine':'TripoSR','busy':busy.locked(),'note':'Server availability is not proof of model readiness'}
 def infer(image,texture,resolution=96):
-    from engine import generate
-    return generate(image,texture,resolution)
+    from engine import generate_checked
+    return generate_checked(image,texture,resolution)
 def validate_glb(b):
     if len(b)<20 or len(b)>MAX_GLB or struct.unpack_from('<4sII',b)!=(b'glTF',2,len(b)):raise ValueError('Invalid GLB')
     n,t=struct.unpack_from('<II',b,12)
@@ -63,10 +63,14 @@ async def generate(request:Request,texture:int=512,resolution:int=96):
             if lo==255 or hi==0:raise ValueError('Şeffaf arka planlı, boş olmayan nesne gerekli.')
         except Exception:raise HTTPException(400,'Geçerli, şeffaf arka planlı PNG gerekli.')
         try:
-            b=await run_in_threadpool(infer,image,texture,resolution);validate_glb(b)
+            result=await run_in_threadpool(infer,image,texture,resolution)
+            b,qa=result if isinstance(result,tuple) else (result,None)
+            validate_glb(b)
         except Exception:
             logging.exception('TripoSR production failed');raise HTTPException(503,'TripoSR üretimi veya GLB doğrulaması başarısız. Sunucu kaydını kontrol edin.')
-        return Response(b,media_type='model/gltf-binary',headers={'Cache-Control':'no-store'})
+        headers={'Cache-Control':'no-store'}
+        if qa is not None:headers['X-Forge-QA']=json.dumps(qa,separators=(',',':'),ensure_ascii=True)
+        return Response(b,media_type='model/gltf-binary',headers=headers)
     finally:busy.release()
 
 @app.post('/api/model/export-obj')
