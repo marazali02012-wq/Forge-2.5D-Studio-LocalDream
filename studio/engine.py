@@ -13,7 +13,7 @@ from tsr.bake_texture import bake_texture
 model=None
 original=moderngl.create_context
 moderngl.create_context=lambda *a,**kw:original(*a,**dict(kw,backend='egl'))
-def generate(rgba,texture):
+def generate(rgba,texture,resolution=96):
     global model
     if model is None:
         torch.set_num_threads(max(1,min(4,int(os.environ.get("OMP_NUM_THREADS","4")),os.cpu_count() or 1)))
@@ -23,7 +23,7 @@ def generate(rgba,texture):
     rgb=a[:,:,:3]*a[:,:,3:]+.5*(1-a[:,:,3:])
     with torch.inference_mode():
         code=model([Image.fromarray(np.uint8(rgb*255))],device='cpu')
-        mesh=model.extract_mesh(code,False,resolution=96)[0]
+        mesh=model.extract_mesh(code,False,resolution=resolution)[0]
         if len(mesh.faces)<500 or len(mesh.vertices)<300 or not np.isfinite(mesh.vertices).all() or min(mesh.extents)<=0.01:raise ValueError('Degenerate generated mesh')
         if mesh.volume<0:mesh.invert()
         baked=bake_texture(mesh,model,code[0],texture)
