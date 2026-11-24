@@ -1,4 +1,4 @@
-name: Forge R25 Turkish text to image real inference
+name: Forge R26 multilingual text to image real inference
 on:
   workflow_dispatch:
   push:
@@ -24,8 +24,9 @@ jobs:
           mkdir -p r25-proof
           pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
           pip install 'numpy<2' pillow==10.4.0 diffusers==0.30.3 transformers==4.46.3 accelerate==0.34.2 'huggingface-hub<1' safetensors
-          pip install llama-cpp-python==0.3.2 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-      - name: Real Turkish prompt and SDXS generation
+          CMAKE_BUILD_PARALLEL_LEVEL=2 CMAKE_ARGS='-DGGML_NATIVE=OFF' pip install --no-binary=llama-cpp-python --no-cache-dir llama-cpp-python==0.3.2
+          python -c 'from llama_cpp import Llama; print("GGUF runtime import OK")'
+      - name: Real multilingual prompt and SDXS generation
         run: |
           cat > /tmp/r25.py <<'PY'
           import json,time,hashlib,traceback,gc
@@ -44,6 +45,11 @@ jobs:
               prompt=r['choices'][0]['message']['content'].strip()
               report['refined_prompt']=prompt
               assert 1<=len(prompt)<=1000 and 'table' in prompt.lower(), 'Turkish meaning not preserved'
+              report['language_cases']={}
+              for phrase in ['draw a table','桌子','ارسم طاولة','テーブルを描いて','dessine une table','нарисуй стол']:
+                  messages=[{'role':'system','content':'Interpret the original language and translate the intended subject into a concise English image prompt. Preserve explicit constraints. Output only the prompt.'},{'role':'user','content':phrase}]
+                  value=llm.create_chat_completion(messages=messages,max_tokens=160,temperature=0.0)['choices'][0]['message']['content'].strip()
+                  report['language_cases'][phrase]={'output':value,'table_keyword':'table' in value.lower()}
               llm.close();del llm;gc.collect()
               model=snapshot_download('IDKiro/sdxs-512-0.9',allow_patterns=['model_index.json','README.md','LICENSE*','scheduler/*','tokenizer/*','unet/config.json','unet/diffusion_pytorch_model.safetensors','vae/config.json','vae/diffusion_pytorch_model.safetensors','text_encoder/config.json','text_encoder/model.safetensors','feature_extractor/*'])
               torch.set_num_threads(2)
