@@ -1,0 +1,124 @@
+name: Forge Studio R5 browser-to-real-CPU proof
+on:
+  workflow_dispatch:
+  push:
+    branches: [gelistirme/trellis2-gpt6]
+    paths: [.github/workflows/studio-r5-live-http.yml]
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_XET: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU runtime
+        run: |
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy<2' omegaconf==2.3.0 pillow==10.4.0 einops==0.7.0 transformers==4.35.0 trimesh==4.5.3 'huggingface-hub<1' imageio rembg onnxruntime scikit-image==0.24.0 xatlas==0.0.9 moderngl==5.10.0 fastapi uvicorn playwright requests
+      - name: Install and verify software EGL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libegl-dev libgl1 libgl-dev libgl1-mesa-dri libegl-mesa0
+          python -c "import ctypes,moderngl; ctypes.CDLL('libEGL.so'); c=moderngl.create_standalone_context(backend='egl'); print('EGL_RENDERER',c.info['GL_RENDERER']); c.release()"
+      - name: Real browser HTTP inference (no mocked response)
+        run: |
+          mkdir -p r5-proof
+          git clone https://github.com/VAST-AI-Research/TripoSR.git studio/upstream-triposr
+          git -C studio/upstream-triposr checkout --detach 107cefdc244c39106fa830359024f6a2f1c78871
+          cat > studio/upstream-triposr/torchmcubes.py <<'PY'
+          import torch,numpy as np
+          from skimage.measure import marching_cubes as mc
+          def marching_cubes(volume,level):
+              v,f,_,_=mc(volume.detach().cpu().numpy(),level=level,gradient_direction='ascent',allow_degenerate=False)
+              return torch.from_numpy(v[:,::-1].copy()).float(),torch.from_numpy(f.copy().astype(np.int64))
+          PY
+          npx --yes playwright install chromium || python -m playwright install chromium
+          python -m playwright install chromium
+          export FORGE_PASSWORD=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+          export FORGE_REQUIRE_AUTH=1
+          cd studio
+          python -m uvicorn server:app --host 127.0.0.1 --port 7860 --workers 1 > ../r5-proof/server.log 2>&1 &
+          pid=$!
+          export FORGE_PID=$pid
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          cat > /tmp/r5-browser.py <<'PY'
+          import os,json,time,hashlib,struct,urllib.request
+          from pathlib import Path
+          import requests
+          from playwright.sync_api import sync_playwright
+          out=Path('../r5-proof').resolve()
+          base='http://127.0.0.1:7860'
+          auth=('forge',os.environ['FORGE_PASSWORD'])
+          report={'mock':False,'success':False,'cpu_threads':2,'models':[]}
+          try:
+              for _ in range(60):
+                  try:
+                      if requests.get(base+'/api/triposr/status',auth=auth,timeout=2).ok:break
+                  except requests.RequestException:pass
+                  time.sleep(1)
+              else:raise RuntimeError('API did not start')
+              assert requests.get(base).status_code==401
+              assert requests.post(base+'/api/triposr/generate',auth=auth,headers={'Origin':'https://invalid.example','Content-Type':'image/png'},data=b'').status_code==403
+              with sync_playwright() as pw:
+                  browser=pw.chromium.launch(headless=True,args=['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+                  context=browser.new_context(viewport={'width':390,'height':844},http_credentials={'username':auth[0],'password':auth[1]},accept_downloads=True)
+                  page=context.new_page()
+                  page.goto(base,wait_until='domcontentloaded')
+                  errors=[]
+                  page.on('pageerror',lambda e:errors.append(str(e)))
+                  page.locator('#engine').select_option('cpu')
+                  for name in ('axe','otter_samurai'):
+                      source=out/(name+'.png')
+                      urllib.request.urlretrieve('https://raw.githubusercontent.com/Stability-AI/stable-fast-3d/main/demo_files/examples/'+name+'.png',source)
+                      page.locator('#imageInput').set_input_files(str(source))
+                      page.wait_for_function('!document.querySelector("#generate").disabled')
+                      start=time.monotonic()
+                      with page.expect_response(lambda r:'/api/triposr/generate?' in r.url,timeout=540000) as pending:
+                          page.locator('#generate').click()
+                      response=pending.value
+                      assert response.ok,(response.status,response.text()[:300])
+                      raw=response.body()
+                      page.wait_for_function('document.querySelector("#cancel").disabled',timeout=90000)
+                      assert not page.locator('#export').is_disabled(),page.locator('#status').inner_text()
+                      assert 'GLB doğrulandı' in page.locator('#status').inner_text(),page.locator('#status').inner_text()
+                      with page.expect_download(timeout=30000) as dl:page.locator('#export').click()
+                      dest=out/(name+'.glb');dl.value.save_as(dest)
+                      b=dest.read_bytes()
+                      assert raw==b and b[:4]==b'glTF'
+                      j=json.loads(b[20:20+struct.unpack_from('<I',b,12)[0]])
+                      assert any('TEXCOORD_0' in p['attributes'] for m in j['meshes'] for p in m['primitives'])
+                      assert any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j['materials'])
+                      item={'name':name,'seconds':round(time.monotonic()-start,2),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'browser_export_exact':True}
+                      report['models'].append(item)
+                      page.screenshot(path=str(out/(name+'-browser.png')),full_page=True)
+                      print('R5_REAL '+json.dumps(item),flush=True)
+                  assert len({x['sha256'] for x in report['models']})==2
+                  assert not errors,errors
+                  browser.close()
+              report['success']=True
+          except Exception as e:
+              report['error']=str(e)
+              raise
+          finally:
+              try:
+                  proc=Path('/proc')/os.environ['FORGE_PID']/'status'
+                  report['memory']=[x for x in proc.read_text().splitlines() if x.startswith(('VmHWM:','VmRSS:'))]
+              except Exception:pass
+              (out/'report.json').write_text(json.dumps(report,indent=2))
+              print('R5_REPORT '+json.dumps(report),flush=True)
+          PY
+          python -u /tmp/r5-browser.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r5-http-proof
+          path: r5-proof/
