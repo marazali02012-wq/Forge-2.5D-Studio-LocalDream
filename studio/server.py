@@ -160,7 +160,6 @@ async def blender_api(request:Request,operation:str,target:int=5000):
         return Response(result,media_type='model/gltf-binary' if operation=='reduce' else 'application/octet-stream')
     finally:busy.release()
 
-
 @app.post('/api/model/components')
 async def components(request:Request,index:int=-1,prune:bool=False):
     if prune and index<0:raise HTTPException(400,'Açık parça seçimi gerekli.')
@@ -182,4 +181,26 @@ async def components(request:Request,index:int=-1,prune:bool=False):
             return Response(result,media_type='model/gltf-binary')
         except Exception:
             logging.exception('Component operation failed');raise HTTPException(400,'Yalnızca tek statik mesh desteklenir. Temizleme için küçük, ana gövde dışı bir parça seçin.')
+    finally:busy.release()
+
+@app.post('/api/model/rig')
+async def rig_api(request:Request):
+    if request.headers.get('content-type','').split(';')[0]!='model/gltf-binary':raise HTTPException(415,'GLB gerekli.')
+    guide_text=request.headers.get('x-forge-rig','')
+    if not guide_text or len(guide_text)>8192:raise HTTPException(400,'Eklem kılavuzu gerekli (8 KB sınırı).')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        buf=bytearray()
+        async for chunk in request.stream():
+            if len(buf)+len(chunk)>MAX_GLB:raise HTTPException(413,'GLB 75 MB sınırı.')
+            buf.extend(chunk)
+        try:
+            from rig import build_rig
+            raw=bytes(buf);check_embedded_model(raw)
+            result=await run_in_threadpool(build_rig,raw,json.loads(guide_text))
+            check_embedded_model(result)
+            if len(result)>MAX_GLB:raise ValueError('Output size')
+            return Response(result,media_type='model/gltf-binary')
+        except Exception:
+            logging.exception('Rig binding failed');raise HTTPException(400,'Geçerli eklem kılavuzu ve dönüştürülmemiş tek statik GLB gerekli. Hazır rig, animasyon ve çoklu mesh desteklenmez.')
     finally:busy.release()
