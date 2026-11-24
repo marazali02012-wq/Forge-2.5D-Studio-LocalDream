@@ -1,0 +1,2 @@
+R10: Yerel UV renk görseli ve parlakliktan tahmini normal/puruzluluk haritasi. AI projeksiyonu veya UV acma degil.
+Test: Chromium CPU, secili materyal, GLB gomulu PNG, diger materyaller, mevcut haritalar, birebir geri alma, 5 ekran boyutu. PBR/normal/HDR regresyonlari gecti. WebGL2 baglami acilamadi (R9 testi exit 77). Android ve canli sunucu dogrulanmadi.

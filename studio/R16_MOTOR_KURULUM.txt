@@ -1,0 +1,15 @@
+R16 — Gerçek yerel motor kurulum teşhisi
+R15 üstüne eklenmiştir. Model ağırlıkları pakette yoktur. İnternet erişimi ve uygun sunucu gerekir. Model kurulumu/çıkarımı burada doğrulanmadı (pip DNS bağlantı hatası). Kurulum araçları deneysel.
+
+Yerel Linux Forge sunucusunda setup.sh tamamlandıktan sonra:
+  source .venv/bin/activate
+  python model_setup.py status all
+  python model_setup.py install prompt --download
+  python model_setup.py install image --download --accept-image-license
+Son komut öncesi lisansı inceleyin: https://huggingface.co/stabilityai/sd-turbo ve https://stability.ai/license . Ticari kullanım koşulları ayrıca doğrulanmalıdır. İndirme büyük olabilir; otomatik veya sunucu başlarken indirme yapılmaz. Sadece paket kurmak için --download kullanmayın; var olan model dosyalarını models/ dizinine yerleştirin veya FORGE_PROMPT_MODEL/FORGE_IMAGE_MODEL belirtin.
+Komut modeli: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF (Q4_K_M, sabit revizyon).
+SD Turbo tam hassasiyet safetensors bileşenleri beklenir. Daha önceki CPU/3D ortamıyla bağımlılık uyumluluğunu gerçek sunucuda kontrol edin. Docker varsayılan imajında isteğe bağlı paketler yoktur; ayrı imaj derlemesi ve yerel model hacmi bağlama gereklidir. Model_setup aracı yerel venv içindir.
+  python model_setup.py status all
+  uvicorn server:app --host 127.0.0.1 --port 8000
+Durum kontrolü sadece ön koşulları denetler; gerçek çıkarım veya dosya bütünlüğünün tam doğrulaması değildir. Başarılı sonuç için gerçek görsel ve komut üretimi ayrı ayrı denenmelidir.
+Test: python test_model_setup_r16.py, python test_prompt_r15.py, python test_image_r14.py. Gerçek API durum yanıtı tarayıcıya test içinde aktarılmıştır. Çıkarım yapılmamıştır. Beş viewport yatay taşma kontrolü geçmiştir; dikey panel kaydırması gereklidir.

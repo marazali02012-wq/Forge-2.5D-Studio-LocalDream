@@ -1,0 +1,5 @@
+R29: gerçek R28 testi https://github.com/marazali02012-wq/Forge-2.5D-Studio-LocalDream/actions/runs/45475743700
+1.5B: Türkçe masa yerine zemin, Çince kolçak yerine sırtlık. Japonca no shine doğru; anahtar kelime testi yanlış negatif. 5/7 insan değerlendirmesi, 4/7 otomatik.
+7B aday testi: commit 66ed8eae6548f8ac8f17ef413ffac864a86fa764. Sonuç doğrulanmadı. FORGE_PROMPT_PROFILE=7b ile isteğe bağlı kurulum, iki GGUF parçası gerekli. 1.5b varsayılanı korundu.
+Tarayıcı: otomatik çeviri seçilirse önce komut önerisi, özgün metin ve düzenleme; onay sonrası çizim ayrı işlem. Eski doğrudan API auto_refine davranışı geriye uyumluluk için korunmuştur.
+Testler: test_review_r29.py, test_prompt_guard_r28.py, test_global_r26.py, test_runtime_r27.py, test_real_asset_r24.py geçti. R29 arayüzünde geçmiş gerçek hatalı model çıktısı tekrar oynatıldı, yeni AI çıkarımı değil. 5 ekran boyutu; mobil dikey kaydırma var. Fiziksel Android, Docker, GPU test edilmedi.

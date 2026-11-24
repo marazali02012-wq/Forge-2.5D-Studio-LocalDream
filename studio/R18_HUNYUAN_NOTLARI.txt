@@ -1,0 +1,5 @@
+R18: Hunyuan3D 2.1 tek görsel GPU worker köprüsü; varsayılan kapalı.
+Resmi kaynak: https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1/blob/main/API_DOCUMENTATION.md
+Hunyuan kurulumu ayrı GPU ortamı ister. Lisansı (non-commercial dahil) incelemeden ticari kullanım yapmayın.
+GPU worker'ı aynı sunucuda 127.0.0.1:8081'e bağlayın (resmi api_server.py --host 127.0.0.1 --port 8081). Forge sunucusunu FORGE_HUNYUAN_ENABLE=1 ile başlatın. Worker'ı herkese açık yayınlamayın. Forge'a erişimde HTTPS ve FORGE_REQUIRE_AUTH=1 kullanın.
+Gerçek model ağırlıkları dahil değil. /health yalnız erişilebilirlik kanıtı. Tek görsel desteklenir; çok açılı AI değildir. R17 çevrimdışı silüet sistemi korunur. GPU çıkarımı yapılmadı. Üretimi iptal etmek uzak worker'ı durdurmayabilir.

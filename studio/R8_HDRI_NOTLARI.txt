@@ -1,0 +1,5 @@
+R8: Radiance RGBE .hdr dosyası ile CPU çevresel ışığı.
+Materyal > Stüdyo aydınlatması > HDR ortam ışığı. Pozlama, ortam dönüşü, aç/kapat.
+Destek: -Y +X RGBE, düz ve modern RLE; 40 MB, 4096x2048 sınırı. Eski tekrar kodu, EXR, GPU ve GLB ortam ışığı kaydı desteklenmez.
+Yansıma ve ışık integrasyonu düşük çözünürlüklü yaklaşık bir yöntemdir; fiziksel PBR değildir.
+Test: test_hdr_r8.py, test_normal_r7.py, test_pbr_r6.py (Chromium CPU). Beş görünüm boyutu; gerçek Android, GPU ve canlı sunucu test edilmedi.

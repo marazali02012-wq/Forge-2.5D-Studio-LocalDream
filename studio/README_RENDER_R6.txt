@@ -1,0 +1,1 @@
+R6: CPU preview supports GLB metallic/roughness (G/B), occlusion (R, strength), emissive (sRGB and factor). Original maps preserved in export. Normal maps, HDRI, GPU map preview and automatic texture generation not implemented. R6 and R5 CPU browser tests passed; five viewport sizes. Approximate shading, not full PBR.

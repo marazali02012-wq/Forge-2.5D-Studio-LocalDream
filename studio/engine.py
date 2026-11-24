@@ -23,12 +23,14 @@ model=None
 if moderngl is not None:
     original=moderngl.create_context
     moderngl.create_context=lambda *a,**kw:original(*a,**dict(kw,backend='egl'))
-def generate_checked(rgba,texture,resolution=96):
+def generate_checked(rgba,texture,resolution=96,source_projection=False):
     global model
     if model is None:
         torch.set_num_threads(max(1,min(4,int(os.environ.get("OMP_NUM_THREADS","4")),os.cpu_count() or 1)))
         ready=diagnose()
         if not ready['configured']:raise RuntimeError('TripoSR local assets missing')
+        # Upstream tokenizer calls hf_hub_download for DINO config even with a local checkpoint.
+        # Resolve only that exact configuration locally; reject unexpected remote requests.
         from tsr.models.tokenizers import image as tokenizer_module
         def local_dino(repo_id,filename,**kwargs):
             if repo_id!='facebook/dino-vitb16' or filename!='config.json':raise RuntimeError('Unexpected tokenizer download')
@@ -90,12 +92,21 @@ def generate_checked(rgba,texture,resolution=96):
             import logging
             logging.exception('Optional color calibration failed; original texture retained')
             color={'applied':False,'method':'bounded_global_color_gain','reason':type(e).__name__}
+    projection={'applied':False,'reason':'not_requested'}
+    if source_projection:
+        try:
+            from source_projection import project_front
+            projection=project_front(m,rgba)
+        except Exception as e:
+            import logging
+            logging.exception('Optional source projection failed; original texture retained')
+            projection={'applied':False,'reason':type(e).__name__}
     padded,atlas=pad_generated_atlas(m.visual.material.baseColorTexture)
     m.visual.material.baseColorTexture=padded
     geometry=geometry_report(mesh)
     try:geometry['shape_diagnostics']=shape_diagnostics(mesh)
     except Exception:geometry['shape_diagnostics']=None
-    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_topology_density_retry',color=color,atlas=atlas,geometry=geometry,bake_method=method)
+    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_topology_density_retry',color=color,source_projection=projection,atlas=atlas,geometry=geometry,bake_method=method)
 
 def generate(rgba,texture,resolution=96):
     return generate_checked(rgba,texture,resolution)[0]

@@ -1,0 +1,3 @@
+R12: Yerel üçgen azaltma (kapalı, tek primitive, dokusuz statik mesh).
+İndeks bağlantısı korunmaya çalışılır; kenar ve vertex halka kontrolleri, Euler karakteristiği, yerel normal değişimi ve vertex yer değiştirme sınırı uygulanır. Genel self-intersection garantisi yoktur. Quad retopoloji değildir. UV/renk/rig/morph/doku modelleri reddedilir. En fazla 6000 yüz ve 4000 vertex. GLB içinde eski tampon verileri korunur; dosya boyutunun küçülmesi garanti değildir.
+Chromium CPU: ico sphere 1280 -> 640 yüz; watertight, winding consistent, Euler 2, hacim oranı 0.980795; açık yüzey reddedildi; geri alma birebir; beş ekran boyutu yatay taşma yok. R11 UV ve kaplama regresyon testi geçti. GPU/Android/canlı sunucu doğrulanmadı.

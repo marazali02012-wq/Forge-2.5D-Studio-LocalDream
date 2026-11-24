@@ -1,0 +1,8 @@
+R14 — Deneysel yerel metinden görsel üretim
+Mevcut CPU/3D sunucusuna isteğe bağlı bağlantı. Gerçek çıkarım bu pakette doğrulanmadı.
+Model ağırlıkları ve diffusers paketleri ZIP içinde yoktur. Varsayılan Docker imajı bunları otomatik yüklemez.
+Sunucu Python ortamında diffusers ve accelerate kurulmalıdır (örnek sürümler: diffusers==0.30.3, accelerate==0.34.2). Bağımlılık uyumu hedef ortamda ayrıca kontrol edilmeli.
+SD Turbo modelinin Diffusers biçimli yerel dizinini edinin ve lisansını kullanım amacınıza göre kontrol edin: https://huggingface.co/stabilityai/sd-turbo
+FORGE_IMAGE_MODEL=/tam/yol/sd-turbo ortam değişkenini sunucuya verin. Docker için dizini konteynere bağlayın ve gerekli paketleri imaja ekleyin. Motor internetten kendiliğinden model indirmez.
+Uygulamayı Forge sunucusundan açın, Üretim > AI çizim > Motoru kontrol et. Kurulu görünmesi gerçek çıkarım başarısı değildir. 512x512 çıktı, 4 adım, seed seçimi. CPU yavaş olabilir; CUDA varsa kullanılır. Kaynak görseli değiştirmek için açık onay gereklidir.
+Test: python test_image_r14.py (API doğrulaması ve tarayıcıda yapay TEST PNG; AI çıkarımı değildir). python test_quad_r13.py (quad regresyonu). Gerçek GPU, model kalitesi ve Android test edilmedi.

@@ -1,0 +1,5 @@
+R24 doğrulama paketi — R23 uygulama kaynak kodu değiştirilmedi.
+GitHub Actions: https://github.com/marazali02012-wq/Forge-2.5D-Studio-LocalDream/actions/runs/45472026522
+Gerçek TripoSR çıkarımı ve zorunlu CPU UV yedeği GitHub test dalında başarılı. Güncel R23 HTML aynı GLB ile yerel Chromium CPU testinden geçti; beş ekran boyutu, byte-identical export, JS hata yok.
+R24 yeni üretim motoru değil, doğrulama paketi. Model ağırlıkları dahil değil. Android/GPU/canlı API test edilmedi.
+Test: python test_real_asset_r24.py (mevcut Python/Chromium bağımlılıkları gerekir).

@@ -1,0 +1,6 @@
+PAKETLEME KURALI — R34 TEMİZ
+Uygulama ZIP: yalnız çalışan kaynak kod, sunucu, kurulum dosyaları ve belgeler.
+Test scriptleri, örnek GLB/PNG, ekran görüntüleri, ölçüm raporları ayrı test arşivinde saklanır.
+Gelecek sürümlerde test kanıtlarını uygulama ZIP'ine ekleme.
+Regresyon için ayrı test arşivini kaynak dizinine aç; testler aynı dizin yapısını kullanır.
+Model ağırlıkları bu pakette yoktur; kurulum gereklilikleri değişmedi.

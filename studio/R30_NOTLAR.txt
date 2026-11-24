@@ -1,0 +1,4 @@
+R30: Gerçek Qwen 7B testi: https://github.com/marazali02012-wq/Forge-2.5D-Studio-LocalDream/actions/runs/45476263239
+7/7 örnek anlamı korudu; bütün diller veya üretim sunucusu doğrulanmış değildir. Yeni kurulumlarda 7B tercih edilir; mevcut 1.5B kurulum korunur. FORGE_PROMPT_PROFILE ile açık seçim mümkündür. Ağır model ağırlıkları ZIP içinde yok.
+R30 tarayıcı testi: gerçek GitHub yanıtları kayıt üzerinden yeniden oynatıldı; yerel canlı AI çıkarımı yapılmadı. Onaysız çizim engeli, 5 viewport, gerçek önceki sandalye GLB içe aktarma ve byte-identical re-export testi geçti. Dikey panel kaydırması devam ediyor.
+SDXS için model index ile scheduler config uyuşmazlığına karşı EulerDiscreteScheduler açıkça yükleniyor; GPU'da SDXS float32 kullanılıyor. Gerçek 2D test ayrı GitHub commit 7546cd6f398df97ca7855660501b23f995483e62. Sonuç doğrulanmadan gerçek çizim tamamlandı denmez. Android, GPU, Docker ve canlı uçtan uca sunucu doğrulanmadı.

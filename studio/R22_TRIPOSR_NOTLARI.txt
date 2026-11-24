@@ -1,0 +1,8 @@
+R22 — R21 üzerine gerçek TripoSR motoru kurulum denetimi.
+- Önceki paket ve model araçları korunur.
+- TripoSR kaynak kodu, Python bağımlılıkları, config.yaml, model.ckpt ve DINO yapılandırması kontrol edilir.
+- Kurulum: mevcut setup.sh ile ortamı hazırlayın; aynı Python ortamında `python triposr_setup.py download` çalıştırın. `python triposr_setup.py status` ile kontrol edin. FORGE_TRIPOSR_MODEL ile yerel model klasörü seçilebilir.
+- Model ve bağımlılıklar bu pakette yoktur. İndirme için internet gerekir. Kurulum tamamlandıktan sonra TripoSR ağırlıkları ve DINO yapılandırması yerelden okunacak şekilde kod değiştirildi; gerçek çıkarım doğrulanmadı.
+- Dosya ön kontrolü gerçek model çalıştırma kanıtı değildir; gerçek CPU/GPU üretimi test edilmeden başarılı kabul edilmez.
+- Test: test_triposr_r22.py, test_remote_r21.py, test_import_r20.py başarılı. Gerçek tarayıcıda 5 ekran boyutu kontrol edildi; 800x360 ve 1280x800 görüntüleri ayrıca incelendi. Gerçek Android, uzak GPU ve gerçek AI çıkarımı doğrulanmadı.
+- Resmi TripoSR demo sayfası kontrol sırasında Runtime error gösterdi; bu alternatif canlı üretim olarak kabul edilmedi.

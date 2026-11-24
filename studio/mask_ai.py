@@ -13,7 +13,7 @@ def model_path():
     return Path(os.environ.get('FORGE_MASK_MODEL') or ROOT/'models'/'u2netp.onnx').expanduser().resolve()
 
 @lru_cache(maxsize=4)
-def checksum_ok(path,size,mtime_ns):
+def checksum_ok(path, size, mtime_ns):
     try:
         with open(path,'rb') as f:
             return hashlib.file_digest(f,'md5').hexdigest()==MODEL_MD5
@@ -21,7 +21,7 @@ def checksum_ok(path,size,mtime_ns):
         return False
 
 def diagnose():
-    p=model_path();issues=[]
+    p=model_path(); issues=[]
     for name in ('onnxruntime','numpy'):
         if importlib.util.find_spec(name) is None:issues.append(name+' eksik')
     try:

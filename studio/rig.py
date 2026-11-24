@@ -78,7 +78,26 @@ def build_rig(raw,guide):
     clips=guide.get('clips',[])
     if not isinstance(clips,list) or len(clips)>7:raise ValueError('Clip limit')
     for clip in clips:
-        name=clip['name'];tracks=clip['tracks'];duration=float(clip['duration'])
+        name=clip['name'];duration=float(clip['duration'])
+        if any(clip.get(k) is not None for k in ('gait','combat','reaction')):
+            if not isinstance(name,str) or not 1<=len(name)<=64 or name in [a['name'] for a in j['animations']] or not .2<=duration<=30:raise ValueError('Invalid gait clip')
+            if sum(clip.get(k) is not None for k in ('gait','combat','reaction'))!=1:raise ValueError('Ambiguous clip')
+            if clip.get('reaction') is not None:
+                from reaction import reaction
+                ts,tracks=reaction(pts,parents,clip['reaction'],duration,v,js,ws)
+            elif clip.get('combat') is not None:
+                from combat import punch
+                ts,tracks=punch(pts,parents,clip['combat'],duration)
+            else:
+                from gait import gait
+                ts,tracks,_,_=gait(pts,parents,clip['gait'],duration)
+            animation={'name':name,'samplers':[],'channels':[]}; time=add(ts,5126,'SCALAR',bounds=True)
+            for idx,path,values in tracks:
+                animation['channels'].append({'sampler':len(animation['samplers']),'target':{'node':start+idx,'path':path}})
+                animation['samplers'].append({'input':time,'output':add(values,5126,'VEC4' if path=='rotation' else 'VEC3'),'interpolation':'LINEAR'})
+            if clip.get('reaction') is not None:animation['extras']={'forgePlayback':'once'}
+            j['animations'].append(animation);continue
+        tracks=clip['tracks']
         if not isinstance(name,str) or not 1<=len(name)<=64 or not np.isfinite(duration) or not .2<=duration<=30 or not isinstance(tracks,list) or not 1<=len(tracks)<=n or name in [a['name'] for a in j['animations']]:raise ValueError('Invalid clip')
         animation={'name':name,'samplers':[],'channels':[]};used=set()
         for track in tracks:

@@ -1,0 +1,5 @@
+R33 — Çizim aday karşılaştırması
+R32 üzerine: kullanıcı 1–3 aday seçer, seed başlangıcından ardışık seedler kullanılır, istekler sırayla gönderilir. Otomatik ek deneme yok. Başarılı adaylar listelenir; kaynak yalnızca açık onayla değişir. Kısmi hata sayısı ve sebebi gösterilir. Tüm hata veya iptal, yeni adayları temizler; kabul edilmiş kaynak korunur. Üst seed sınırı taşmaz.
+TEST: test_draw_r33.py ve test_draw_r32.py PASS. R33 testi farklı konuya ait gerçek kayıtlı PNG'leri simüle API yanıtı olarak döndürür; bunlar aynı komut/seed karşılaştırmasının gerçek çıktıları değildir. 5 Chromium boyutu yatay taşmasız; aday seçimi ve iptal/hata denetimi. Masaüstü ve 800x360 görüntüleri gözle kontrol edildi. Mobilde panel kaydırması gerekli.
+SD Turbo gerçek kalite karşılaştırması: https://github.com/marazali02012-wq/Forge-2.5D-Studio-LocalDream/actions/runs/45478151939 — son kontrolde in_progress. Üretim kalitesi, canlı API, Android, ticari lisans açık. R33 arayüz değişikliği GitHub ana dala gönderilmedi.
+02/17 açık. Tripo ana referans.

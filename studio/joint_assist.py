@@ -15,8 +15,7 @@ def medial_points(raw):
     v=accessor(j,b,p['attributes']['POSITION']).astype(float);f=accessor(j,b,p['indices']).reshape(-1,3)
     if len(v)>250000 or len(f)>200000 or not np.isfinite(v).all() or f.max()>=len(v):raise ValueError('Geometry limit')
     m=trimesh.Trimesh(vertices=v,faces=f,process=True)
-    # Disconnected accessories are not anatomical limbs. Fail closed rather than snap to them.
-    if len(m.split(only_watertight=False))!=1:raise ValueError('Multiple disconnected geometry components; review manually before joint suggestion')
+    if len(m.split(only_watertight=False))!=1:raise ValueError("Multiple disconnected geometry components; review manually before joint suggestion")
     lo,hi=v.min(0),v.max(0);span=hi-lo
     if min(span)<=1e-6 or not m.is_watertight:raise ValueError('Closed volumetric mesh required')
     pitch=float(max(span)/80);vox=m.voxelized(pitch).fill();a=np.pad(vox.matrix,1)

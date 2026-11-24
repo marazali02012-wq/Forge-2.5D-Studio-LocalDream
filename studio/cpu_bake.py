@@ -7,6 +7,7 @@ def rasterize(vertices, faces, uv, resolution):
     if n not in (512,1024,2048) or len(f)>250000 or len(v)!=len(u) or not len(f) or not np.isfinite(v).all() or not np.isfinite(u).all() or u.min() < -1e-5 or u.max()>1+1e-5 or f.min()<0 or f.max()>=len(v):
         raise ValueError('CPU UV geometry out of limits')
     pos=np.zeros((n,n,3),np.float32); mask=np.zeros((n,n),bool)
+    # Pixel centres, bottom-up UV coordinates, matching upstream FBO orientation.
     for ids in f:
         a,b,c=u[ids]*n-.5; e=b-a; g=c-a; det=e[0]*g[1]-e[1]*g[0]
         if abs(det)<1e-10:continue

@@ -1,0 +1,6 @@
+R28 — Global komut motoru, ana yapım sırası 01/17.
+R26 uzak gerçek testinde llama.cpp yerel kütüphane yüklendi, ancak 0.5B model masa çiz komutunu yanlış anladı ve tekrar üretti. Run 45474758695.
+Varsayılan yeni model adayı Qwen2.5-1.5B-Instruct Q4_K_M; önceki model FORGE_PROMPT_MODEL ile seçilebilir. Model ağırlıkları dahil değil; yeni gerçek çıkarım doğrulanmadı.
+Tekrarlı, kesilmiş veya biçimsel olarak hatalı komutlar reddedilir; bu doğrulayıcı anlamsal doğruluk garantisi vermez. Hatalı komut çizimi tetiklemez; önceki AI sonucu yeni istek başlatıldığında temizlenir.
+Yerel testler: test_prompt_guard_r28.py, test_global_r26.py, test_runtime_r27.py başarılı. API hata yolları test edildi; tarayıcı yanıtı simüle edildi. Beş ekran boyutunda yatay taşma kontrolü. Masaüstü ve 800x360 ekran görüntüleri incelendi; sağ panel kaydırmalı. Gerçek Android, yeni AI modeli ve Docker çalışması doğrulanmadı.
+GitHub izole dalı: forge-r23-real-inference-test; workflow .github/workflows/forge-r28-prompt.yml, commit 5eeeb654ea0a1ef7d53f1d7ce890cbbdf23e1635. Yeni model için 7 dil, farklı nesne, malzeme, sayı ve olumsuz kısıt deneyi. Ana dal ve canlı sunucu değiştirilmedi.

@@ -1,0 +1,4 @@
+R9: WebGL2 shader yolu MR, AO, emissive, normal ve HDRI için genişletildi.
+CPU motoru korunmuştur. Node syntax check PASS. CPU normal, PBR ve HDR regresyon testleri PASS.
+GPU test_gpu_r9.py: SKIP (exit 77), Chromium WebGL2 bağlamı açılamadı. GPU shader derlemesi ve görsel doğrulaması yapılmadı.
+HDRI düşük çözünürlüklü örnekleme; tam fiziksel PBR değil. Android, gerçek GPU, canlı sunucu doğrulanmadı.

@@ -2,7 +2,7 @@
 import bpy, sys, os, json
 import numpy as np
 # Compatibility for Debian Blender 3.x glTF add-on on NumPy 1.24+.
-if 'bool' not in np.__dict__: np.bool=np.bool_
+if "bool" not in np.__dict__: np.bool=np.bool_
 from pathlib import Path
 src, dest, op, count = sys.argv[sys.argv.index('--')+1:]
 bpy.ops.wm.read_factory_settings(use_empty=True)

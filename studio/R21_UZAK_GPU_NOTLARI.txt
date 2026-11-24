@@ -1,0 +1,5 @@
+R21 - Hunyuan worker için ayrı HTTPS GPU sunucusu. R20 içinden devam.
+Varsayılan kapalı: FORGE_HUNYUAN_ENABLE=0 (ya da değişken yok).
+Yerel: FORGE_HUNYUAN_ENABLE=1; varsayılan http://127.0.0.1:8081.
+Uzak: FORGE_HUNYUAN_ENABLE=1; FORGE_HUNYUAN_URL=https://GPU-SUNUCUNUZ (gerçek DNS adı); FORGE_HUNYUAN_TOKEN=uzun-gizli-bearer-anahtari.
+Uzak GPU sunucusunun Hunyuan API'sini /health ve /generate uçlarında sunması, TLS sertifikası ve Bearer doğrulaması sağlaması gerekir. Resmi Hunyuan API tek başına Bearer koruması sağlamıyorsa ters proxy üzerinde uygulanmalıdır. Anahtar yalnızca sunucu ortam değişkeninde saklanır; HTML içine koymayın. Herhangi bir uzak sunucu otomatik seçilmez; kullanıcı görseli yalnız açık üretim isteğinde gönderilir. Uzak sunucu seçimi operatöre aittir; güvenilen hizmeti seçin. HTTP yönlendirme takip edilmez; proxy ortam ayarları kullanılmaz. HTTPS sertifika kontrolü açıktır. Sağlık kontrolü gerçek AI çıkarımının kanıtı değildir. GPU ve model ağırlıkları ayrıca kurulmalıdır. R20 yerel özellikleri korunur. Yeni ücretli servis oluşturulmadı.

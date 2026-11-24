@@ -14,6 +14,7 @@ def split_mesh(raw,j):
     m.apply_transform(matrix)
     v=np.asarray(m.vertices);f=np.asarray(m.faces)
     if len(f)==0 or len(f)>500000 or not np.isfinite(v).all():raise ValueError('Geometry limit')
+    # Weld coincident positions for connectivity ONLY; keep original texture seams in export.
     _,inv=np.unique(v,axis=0,return_inverse=True);wf=inv[f]
     e=np.sort(np.concatenate([wf[:,[0,1]],wf[:,[1,2]],wf[:,[2,0]]]),axis=1)
     owners=np.tile(np.arange(len(f)),3)

@@ -1,0 +1,5 @@
+R15 — Yerel komut motoru (deneysel)
+R14 paketinin devamıdır. Yerel GGUF modelinden görsel, 3D açıklaması veya kaplama açıklaması için düzenlenebilir metin üretir. Yalnızca görsel komutu açık kullanıcı işlemiyle çizim paneline aktarılır. Model/kaplama komutu şu anda üretim motoruna bağlanmaz.
+Sunucuya llama-cpp-python ve sohbet şablonu içeren uyumlu bir instruction GGUF modeli kurun (küçük bir model tercih edin). FORGE_PROMPT_MODEL=/tam/yol/model.gguf değişkenini tanımlayın. Docker dosyası prompt_ai.py dosyasını içerir ama isteğe bağlı bağımlılık/modeli otomatik kurmaz. Model lisansını ve donanım gereksinimlerini kontrol edin. Yerel çıkarım CPU üzerinde çalışacak şekilde tasarlanmıştır; canlı çıkarım bu ortamda doğrulanmadı.
+R14 SD Turbo ağırlıkları da kurulu değildir; çizim kurulumu için R14_AI_KURULUM.txt dosyasına bakın. Üretim motorları hazır olmadan düğmeler kapalıdır. Uygulamayı Forge sunucusundan açın.
+Test: python test_prompt_r15.py ve python test_image_r14.py. Test yanıtları taklittir, gerçek AI çıkarımı değildir. Beş viewport tarayıcı testi ve gerçek ekran görüntüsü alındı. Gerçek Android, GPU ve canlı sunucu doğrulanmadı.

@@ -32,10 +32,12 @@ async def protect(request,call_next):
 @app.get('/')
 def home():return FileResponse(ROOT/'index.html')
 @app.get('/api/triposr/status')
-def status():return {'engine':'TripoSR','busy':busy.locked(),'note':'Server availability is not proof of model readiness'}
-def infer(image,texture,resolution=96):
+def status():
+    from triposr_setup import diagnose
+    return dict(diagnose(),engine='TripoSR',busy=busy.locked())
+def infer(image,texture,resolution=96,source_projection=False):
     from engine import generate_checked
-    return generate_checked(image,texture,resolution)
+    return generate_checked(image,texture,resolution,source_projection=source_projection)
 def validate_glb(b):
     if len(b)<20 or len(b)>MAX_GLB or struct.unpack_from('<4sII',b)!=(b'glTF',2,len(b)):raise ValueError('Invalid GLB')
     n,t=struct.unpack_from('<II',b,12)
@@ -45,7 +47,7 @@ def validate_glb(b):
     if not any('baseColorTexture' in m.get('pbrMetallicRoughness',{}) for m in j.get('materials',[])):raise ValueError('No base texture')
     if not any('bufferView' in i for i in j.get('images',[])):raise ValueError('No embedded texture')
 @app.post('/api/triposr/generate')
-async def generate(request:Request,texture:int=512,resolution:int=96):
+async def generate(request:Request,texture:int=512,resolution:int=96,source_projection:bool=False):
     if resolution not in (96,128,160,256):raise HTTPException(400,'Geometri çözünürlüğü 96, 128, 160 veya 256 olmalı.')
     if texture not in (512,1024,2048):raise HTTPException(400,'Doku boyutu 512, 1024 veya 2048 olmalı.')
     if request.headers.get('content-type','').split(';')[0]!='image/png':raise HTTPException(415,'PNG gerekli.')
@@ -63,7 +65,7 @@ async def generate(request:Request,texture:int=512,resolution:int=96):
             if lo==255 or hi==0:raise ValueError('Şeffaf arka planlı, boş olmayan nesne gerekli.')
         except Exception:raise HTTPException(400,'Geçerli, şeffaf arka planlı PNG gerekli.')
         try:
-            result=await run_in_threadpool(infer,image,texture,resolution)
+            result=await run_in_threadpool(infer,image,texture,resolution,True) if source_projection else await run_in_threadpool(infer,image,texture,resolution)
             b,qa=result if isinstance(result,tuple) else (result,None)
             validate_glb(b)
         except Exception:
@@ -222,4 +224,160 @@ async def joint_assist_api(request:Request):
             return await run_in_threadpool(suggest_joints,raw,json.loads(guide_text))
         except Exception:
             logging.exception('Joint assistance failed');raise HTTPException(400,'Kapalı, tek, statik GLB ve geçerli eklem kılavuzu gerekli.')
+    finally:busy.release()
+
+@app.post('/api/model/auto-guide')
+async def auto_guide_api(request:Request):
+    if request.headers.get('content-type','').split(';')[0]!='model/gltf-binary':raise HTTPException(415,'GLB gerekli.')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        buf=bytearray()
+        async for chunk in request.stream():
+            if len(buf)+len(chunk)>MAX_GLB:raise HTTPException(413,'GLB 75 MB sınırı.')
+            buf.extend(chunk)
+        try:
+            from auto_rig import propose_humanoid
+            raw=bytes(buf);check_embedded_model(raw)
+            return await run_in_threadpool(propose_humanoid,raw)
+        except Exception:
+            logging.exception('T-pose guide rejected');raise HTTPException(400,'Yukarı yönü Y olan, kolları iki yana açık, tek kapalı ve birleşik gövdeli T-poz GLB gerekli. Manuel kılavuzu kullanabilirsiniz.')
+    finally:busy.release()
+
+@app.get('/api/image/status')
+def image_status():
+    from image_ai import available
+    from model_setup import diagnose,image_profile
+    return {**diagnose('image'),'configured':available(),'engine':image_profile()+' (yerel)','fallback_configured':image_profile() in ('sd-turbo','sd15') and diagnose('image','sdxs')['configured'],'note':'Kurulum varlığı çıkarım başarısı değildir.'}
+
+@app.post('/api/image/draw')
+async def draw_api(request:Request):
+    from image_ai import available,draw,draw_profile
+    from model_setup import image_profile,diagnose
+    if request.headers.get('content-type','').split(';')[0]!='application/json':raise HTTPException(415,'JSON gerekli.')
+    buf=bytearray()
+    async for chunk in request.stream():
+        if len(buf)+len(chunk)>8192:raise HTTPException(413,'Komut çok uzun.')
+        buf.extend(chunk)
+    try:
+        data=json.loads(buf); prompt=data['prompt'];seed=data['seed'];auto_refine=data.get('auto_refine',False);fallback=data.get('allow_fallback',False);reference_frame=data.get('reference_frame',False)
+        if type(auto_refine) is not bool or type(fallback) is not bool or type(reference_frame) is not bool:raise ValueError()
+        if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=1000 or type(seed)!=int or not 0<=seed<=2147483647:raise ValueError()
+    except (ValueError,KeyError,TypeError):raise HTTPException(400,'1–1000 karakter komut ve geçerli seed gerekli.')
+    primary=image_profile();primary_ready=available();alternate_ready=fallback and primary in ('sd-turbo','sd15') and diagnose('image','sdxs')['configured']
+    if not primary_ready and not alternate_ready:raise HTTPException(503,'Seçili çizim motorları kurulu değil.')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        if auto_refine:
+            from prompt_ai import available as prompt_ready,refine
+            if not prompt_ready():raise HTTPException(503,'Çok dilli komut için GGUF motoru gerekli. Doğrudan İngilizce komut kullanabilir veya motoru kurabilirsiniz.')
+            try:prompt=await run_in_threadpool(refine,prompt.strip(),'image')
+            except ValueError:raise HTTPException(422,'AI komutu geçersiz veya tekrarlı; çizim başlatılmadı. Komutu elle düzenleyin.')
+        selected=primary
+        if primary_ready:
+            try:
+                if reference_frame and primary=='sd15':result=await run_in_threadpool(draw,prompt.strip(),seed,reference_frame=True)
+                else:result=await run_in_threadpool(draw,prompt.strip(),seed)
+            except Exception:
+                if not alternate_ready:raise
+                logging.exception('Primary image inference failed; user-enabled SDXS fallback')
+                selected='sdxs';result=await run_in_threadpool(draw_profile,prompt.strip(),seed,selected)
+        else:
+            selected='sdxs';result=await run_in_threadpool(draw_profile,prompt.strip(),seed,selected)
+        if len(result)>4*1024*1024:raise ValueError('Image too large')
+        return Response(result,media_type='image/png',headers={'X-Forge-Image-Engine':selected,'X-Forge-Fallback':str(selected!=primary).lower()})
+    except HTTPException:raise
+    except Exception:
+        logging.exception('Local image inference failed');raise HTTPException(500,'Çizim başarısız; sunucu kaydını kontrol edin.')
+    finally:busy.release()
+
+@app.get('/api/prompt/status')
+def prompt_status():
+    from prompt_ai import available
+    from model_setup import diagnose,prompt_profile
+    return {**diagnose('prompt'),'configured':available(),'engine':'Qwen '+prompt_profile()+' / GGUF (yerel)','note':'Kurulum varlığı çıkarım başarısı değildir.'}
+
+@app.post('/api/prompt/refine')
+async def prompt_refine(request:Request):
+    from prompt_ai import available,refine
+    if request.headers.get('content-type','').split(';')[0]!='application/json':raise HTTPException(415,'JSON gerekli.')
+    buf=bytearray()
+    async for chunk in request.stream():
+        if len(buf)+len(chunk)>8192:raise HTTPException(413,'Komut çok uzun.')
+        buf.extend(chunk)
+    try:
+        data=json.loads(buf);prompt=data['prompt'];purpose=data['purpose']
+        if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=500 or purpose not in ('image','texture','model'):raise ValueError()
+    except (ValueError,KeyError,TypeError):raise HTTPException(400,'1–500 karakter komut ve geçerli amaç gerekli.')
+    if not available():raise HTTPException(503,'Yerel komut motoru kurulu değil.')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        result=await run_in_threadpool(refine,prompt.strip(),purpose)
+        if not isinstance(result,str) or not 1<=len(result.strip())<=1000:raise ValueError('Invalid prompt output')
+        return {'prompt':result.strip(),'purpose':purpose}
+    except ValueError:
+        raise HTTPException(422,'AI komutu geçersiz veya tekrarlı; yeniden deneyin veya elle düzenleyin.')
+    except Exception:
+        logging.exception('Local prompt inference failed');raise HTTPException(500,'Komut üretimi başarısız; sunucu kaydını kontrol edin.')
+    finally:busy.release()
+
+@app.get('/api/hunyuan/status')
+async def hunyuan_status():
+    from hunyuan_bridge import health
+    return await run_in_threadpool(health)
+
+@app.post('/api/hunyuan/generate')
+async def hunyuan_generate(request:Request,texture:bool=True,seed:int=1234):
+    from hunyuan_bridge import generate as run_hunyuan
+    if os.environ.get('FORGE_HUNYUAN_ENABLE')!='1':raise HTTPException(503,'Hunyuan GPU worker etkin değil.')
+    if not 0<=seed<=4294967295:raise HTTPException(400,'Seed sınırı 0–4294967295.')
+    if request.headers.get('content-type','').split(';')[0]!='image/png':raise HTTPException(415,'PNG gerekli.')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        buf=bytearray()
+        async for chunk in request.stream():
+            if len(buf)+len(chunk)>MAX_IMAGE:raise HTTPException(413,'Görsel 10 MB sınırını aşıyor.')
+            buf.extend(chunk)
+        try:
+            with Image.open(io.BytesIO(buf)) as im:
+                if im.format!='PNG' or im.width*im.height>16000000:raise ValueError('PNG sınırı')
+                im.verify()
+        except Exception:raise HTTPException(400,'Geçerli PNG gerekli.')
+        try:
+            b=await run_in_threadpool(run_hunyuan,bytes(buf),texture,seed)
+            j=check_embedded_model(b)
+            if not any('POSITION' in p.get('attributes',{}) for m in j['meshes'] for p in m.get('primitives',[])):raise ValueError('No geometry')
+            if texture:validate_glb(b)
+        except Exception:
+            logging.exception('Hunyuan worker response failed');raise HTTPException(503,'Hunyuan üretimi veya GLB doğrulaması başarısız.')
+        return Response(b,media_type='model/gltf-binary')
+    finally:busy.release()
+
+@app.get('/api/mask/status')
+def mask_status():
+    from mask_ai import diagnose
+    return diagnose()
+
+@app.post('/api/mask/remove')
+async def mask_remove(request:Request):
+    from mask_ai import diagnose,mask_image
+    if request.headers.get('content-type','').split(';')[0]!='image/png':raise HTTPException(415,'PNG gerekli.')
+    if not diagnose()['configured']:raise HTTPException(503,'Sunucu fon ayırma motoru kurulu değil.')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        buf=bytearray()
+        async for chunk in request.stream():
+            if len(buf)+len(chunk)>MAX_IMAGE:raise HTTPException(413,'Görsel 10 MB sınırı.')
+            buf.extend(chunk)
+        try:
+            with Image.open(io.BytesIO(buf)) as im:
+                if im.format!='PNG' or im.width*im.height>1536*1536:raise ValueError('PNG size')
+                image=im.convert('RGBA');image.load()
+            if image.getchannel('A').getextrema()!=(255,255):raise ValueError('Existing alpha')
+        except Exception:raise HTTPException(400,'Geçerli opak PNG gerekli.')
+        try:
+            result=await run_in_threadpool(mask_image,image)
+            if len(result)>MAX_IMAGE:raise ValueError('Mask output too large')
+            return Response(result,media_type='image/png')
+        except Exception:
+            logging.exception('Local segmentation failed');raise HTTPException(422,'Güvenilir fon maskesi oluşturulamadı.')
     finally:busy.release()
