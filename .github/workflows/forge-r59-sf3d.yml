@@ -1,0 +1,48 @@
+name: R59 low-memory SF3D CPU inference
+on:
+  push:
+    branches: [forge-r59-lowmem-sf3d]
+    paths: ['.github/workflows/forge-r59-sf3d.yml']
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HF_HUB_DISABLE_XET: '1'
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Public evaluation files (no login or gated model)
+        run: |
+          mkdir -p evidence models inputs
+          pip install 'numpy<2' scipy pillow onnxruntime scikit-image trimesh==4.5.3 networkx huggingface_hub
+          python - <<'PY'
+          from huggingface_hub import HfApi,snapshot_download
+          from pathlib import Path
+          model="jc-builds/sf3d-ios";info=HfApi().model_info(model,revision="7dcf47a")
+          assert not info.gated and not info.private
+          assert info.sha.startswith("7dcf47a")
+          Path("evidence/revision.txt").write_text(info.sha)
+          snapshot_download(model,revision=info.sha,local_dir="models",allow_patterns=["sf3d_encoder.onnx","sf3d_encoder.onnx.data","sf3d_decoder.onnx","LICENSE.md","NOTICE"])
+          PY
+          cp models/LICENSE.md models/NOTICE evidence/
+          sha256sum models/*.onnx* > evidence/model-sha256.txt
+          for f in robot police_woman; do curl -fL --retry 2 "https://raw.githubusercontent.com/VAST-AI-Research/TripoSR/107cefdc244c39106fa830359024f6a2f1c78871/examples/$f.png" -o "inputs/$f.png"; done
+          free -h | tee evidence/memory.txt
+      - name: Real CPU inference on same public benchmark sources
+        run: |
+          python -u /usr/bin/time -v python -u experiments/r59/sf3d_eval.py models evidence inputs/robot.png --res 96 2>&1 | tee evidence/inference.log
+          test -s evidence/report.json
+          rm -f evidence/triplane.npy
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r59-sf3d-evaluation
+          path: evidence/
+          retention-days: 7
