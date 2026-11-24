@@ -159,3 +159,26 @@ async def blender_api(request:Request,operation:str,target:int=5000):
             logging.exception('Blender operation failed');raise HTTPException(400,'İşlem başarısız; model veya sunucu kaydını kontrol edin.')
         return Response(result,media_type='model/gltf-binary' if operation=='reduce' else 'application/octet-stream')
     finally:busy.release()
+
+
+@app.post('/api/model/components')
+async def components(request:Request,index:int=-1):
+    if index < -1 or index > 4095:raise HTTPException(400,'Geçersiz parça.')
+    if request.headers.get('content-type','').split(';')[0]!='model/gltf-binary':raise HTTPException(415,'GLB gerekli.')
+    if not busy.acquire(blocking=False):raise HTTPException(409,'Motor meşgul.')
+    try:
+        buf=bytearray()
+        async for chunk in request.stream():
+            if len(buf)+len(chunk)>MAX_GLB:raise HTTPException(413,'GLB 75 MB sınırı.')
+            buf.extend(chunk)
+        try:
+            from parts import component_operation
+            raw=bytes(buf);j=check_embedded_model(raw)
+            result=await run_in_threadpool(component_operation,raw,j,None if index==-1 else index)
+            if index==-1:return result
+            check_embedded_model(result)
+            if len(result)>MAX_GLB:raise ValueError('Output too large')
+            return Response(result,media_type='model/gltf-binary')
+        except Exception:
+            logging.exception('Component operation failed');raise HTTPException(400,'Tek, statik GLB gerekli. Kemik, animasyon ve çoklu mesh desteklenmiyor.')
+    finally:busy.release()
