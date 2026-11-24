@@ -43,7 +43,9 @@ def generate_checked(rgba,texture,resolution=96):
             except Exception as e:
                 attempts.append({'resolution':r,'threshold':t,'framing':framing,'error':type(e).__name__})
         if mesh is None:raise ValueError('No valid generated mesh')
-        baked=bake_texture(mesh,model,best_code,texture)
+        # Extract the single scene from the batch, as required by upstream bake_texture.
+        if best_code.ndim!=5 or best_code.shape[0]!=1:raise ValueError('Unexpected scene batch dimensions')
+        baked=bake_texture(mesh,model,best_code[0],texture)
     tex=Image.fromarray(np.uint8(np.clip(baked['colors'],0,1)*255)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     vm=baked['vmapping']
     visual=trimesh.visual.texture.TextureVisuals(uv=baked['uvs'],material=trimesh.visual.material.PBRMaterial(baseColorTexture=tex,metallicFactor=0.,roughnessFactor=1.))
