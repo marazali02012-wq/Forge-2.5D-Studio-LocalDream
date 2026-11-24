@@ -5,22 +5,38 @@ from pathlib import Path
 os.environ.setdefault('LIBGL_ALWAYS_SOFTWARE','1')
 os.environ.setdefault('HF_HUB_DISABLE_XET','1')
 sys.path.insert(0,str(Path(__file__).resolve().parent/'upstream-triposr'))
-import torch, numpy as np, trimesh, moderngl
+from triposr_setup import model_dir, diagnose
+import torch, numpy as np, trimesh
+from cpu_bake import bake_cpu
+try:
+    import moderngl
+except ImportError:
+    moderngl=None
 from PIL import Image
 from tsr.system import TSR
 from tsr.utils import resize_foreground
-from tsr.bake_texture import bake_texture
 from quality import source_mask, compare, prefer
 from color_qa import calibrate
 from atlas_qa import pad_generated_atlas, geometry_report
 model=None
-original=moderngl.create_context
-moderngl.create_context=lambda *a,**kw:original(*a,**dict(kw,backend='egl'))
+if moderngl is not None:
+    original=moderngl.create_context
+    moderngl.create_context=lambda *a,**kw:original(*a,**dict(kw,backend='egl'))
 def generate_checked(rgba,texture,resolution=96):
     global model
     if model is None:
         torch.set_num_threads(max(1,min(4,int(os.environ.get("OMP_NUM_THREADS","4")),os.cpu_count() or 1)))
-        model=TSR.from_pretrained('stabilityai/TripoSR',config_name='config.yaml',weight_name='model.ckpt').to('cpu').eval()
+        ready=diagnose()
+        if not ready['configured']:raise RuntimeError('TripoSR local assets missing')
+        from tsr.models.tokenizers import image as tokenizer_module
+        def local_dino(repo_id,filename,**kwargs):
+            if repo_id!='facebook/dino-vitb16' or filename!='config.json':raise RuntimeError('Unexpected tokenizer download')
+            return str(model_dir()/'dino-config.json')
+        original_download=tokenizer_module.hf_hub_download
+        try:
+            tokenizer_module.hf_hub_download=local_dino
+            model=TSR.from_pretrained(str(model_dir()),config_name='config.yaml',weight_name='model.ckpt').to('cpu').eval()
+        finally:tokenizer_module.hf_hub_download=original_download
         model.renderer.set_chunk_size(4096)
     ref=source_mask(rgba)
     attempts=[]; best=None; mesh=None; best_code=None
@@ -41,13 +57,23 @@ def generate_checked(rgba,texture,resolution=96):
                 attempts.append(q)
                 if best is None or prefer(best,q):
                     mesh,best,best_code=m,q,code
+                # Keep warning honest; do not force retries on a passing initial candidate.
                 if best is not None and not best['warning']:break
             except Exception as e:
                 attempts.append({'resolution':r,'threshold':t,'framing':framing,'error':type(e).__name__})
         if mesh is None:raise ValueError('No valid generated mesh')
         # Extract the single scene from the batch, as required by upstream bake_texture.
         if best_code.ndim!=5 or best_code.shape[0]!=1:raise ValueError('Unexpected scene batch dimensions')
-        baked=bake_texture(mesh,model,best_code[0],texture)
+        method='egl'
+        try:
+            from tsr.bake_texture import bake_texture
+            baked=bake_texture(mesh,model,best_code[0],texture)
+            if not np.isfinite(baked['colors']).all() or not (baked['colors'][:,:,3]>0).any():raise ValueError('Invalid EGL texture')
+        except Exception:
+            import logging
+            logging.exception('EGL texture bake failed; trying CPU rasterization of same neural scene')
+            method='cpu_uv_raster'
+            baked=bake_cpu(mesh,model,best_code[0],texture)
     tex=Image.fromarray(np.uint8(np.clip(baked['colors'],0,1)*255)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     vm=baked['vmapping']
     visual=trimesh.visual.texture.TextureVisuals(uv=baked['uvs'],material=trimesh.visual.material.PBRMaterial(baseColorTexture=tex,metallicFactor=0.,roughnessFactor=1.))
@@ -65,7 +91,7 @@ def generate_checked(rgba,texture,resolution=96):
     padded,atlas=pad_generated_atlas(m.visual.material.baseColorTexture)
     m.visual.material.baseColorTexture=padded
     geometry=geometry_report(mesh)
-    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference',color=color,atlas=atlas,geometry=geometry)
+    return m.export(file_type='glb'),dict(best=best,attempts=attempts,method='front_silhouette_multi_inference',color=color,atlas=atlas,geometry=geometry,bake_method=method)
 
 def generate(rgba,texture,resolution=96):
     return generate_checked(rgba,texture,resolution)[0]
