@@ -111,4 +111,7 @@ def propose_humanoid(raw,joint_count=21):
     except ValueError as t_error:
         from auto_rig_a import propose_a_pose
         try:return propose_a_pose(raw,joint_count)
-        except ValueError as a_error:raise ValueError(f'T: {t_error}; A: {a_error}') from a_error
+        except ValueError as a_error:
+            from rig_components import propose_accessories
+            try:return propose_accessories(raw,joint_count)
+            except ValueError as m_error:raise ValueError(f'T: {t_error}; A: {a_error}; parts: {m_error}') from m_error

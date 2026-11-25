@@ -52,13 +52,20 @@ def build_rig(raw,guide):
         distances[:,i]=d
     blend=max(diag*.055,1e-8)
     weight_method=guide.get('weight_method','distance')
-    if weight_method=='bilateral_leg_guard':
+    if weight_method in ('bilateral_leg_guard','bilateral_foot_contact'):
         from rig_weights import protect_legs
         distances=protect_legs(distances,v,pts,names,parents,blend)
+        if weight_method=='bilateral_foot_contact':
+            from rig_weights import protect_foot_contacts
+            distances=protect_foot_contacts(distances,v,pts,names,parents,blend)
     elif weight_method!='distance':raise ValueError('Unknown skin weight method')
     k=min(4,n);order=np.argsort(distances,axis=1,kind='stable')[:,:k];d=np.take_along_axis(distances,order,axis=1)
     weight=np.exp(-(d-d[:,0:1])/(2*blend**2));weight/=weight.sum(1,keepdims=True)
     js=np.zeros((len(v),4),dtype='<u2');ws=np.zeros((len(v),4),dtype='<f4');js[:,:k]=order;ws[:,:k]=weight
+    if 'rigid_components' in guide:
+        from rig_components import bind_accessories
+        if 'indices' not in p:raise ValueError('Indexed component mesh required')
+        js,ws=bind_accessories(raw,v,accessor(j,b,p['indices']).reshape(-1,3),guide,js,ws)
     if not np.isfinite(ws).all() or not np.allclose(ws.sum(1),1,atol=1e-6):raise ValueError('Invalid weights')
     # Append to original GLB: existing positions, UVs, indices, image bytes remain untouched.
     def add(a,ctype,kind,target=None,bounds=False):

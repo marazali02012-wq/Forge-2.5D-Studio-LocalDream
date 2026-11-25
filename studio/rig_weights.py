@@ -28,3 +28,31 @@ def protect_legs(distances,vertices,points,names,parents,blend):
         out[np.ix_(suppress>=1-1e-8,limbs)]=np.inf
     if not np.isfinite(out).any(axis=1).all():raise ValueError('No remaining skin influences')
     return out
+
+
+def protect_foot_contacts(distances,vertices,points,names,parents,blend):
+    """Smoothly isolate each sole from shin/pelvis influences in reviewed 26-joint guides.
+
+    A rigid ankle/foot/toe subtree is valid for the current walk (no toe roll).
+    Geometry outside the ankle transition is not modified. Existing method unchanged.
+    """
+    ids={n:i for i,n in enumerate(names)};v=np.asarray(vertices,float);p=np.asarray(points,float)
+    h=float(np.ptp(v[:,1]));out=np.array(distances,copy=True)
+    if not np.isfinite(h) or h<=1e-6:raise ValueError('Invalid foot height')
+    for s,other in (('L','R'),('R','L')):
+        try: ankle,foot,toe=[ids[s+' '+k] for k in ('Ankle','Foot','Toe')];op=ids[other+' Ankle']
+        except KeyError as e:raise ValueError('26-joint foot chain required') from e
+        if parents[foot]!=ankle or parents[toe]!=foot:raise ValueError('Invalid foot chain')
+        gap=abs(p[ankle,0]-p[op,0]);mid=(p[ankle,0]+p[op,0])/2
+        if gap<h*.045:raise ValueError('Ambiguous feet')
+        side=(v[:,0]-mid)*np.sign(p[ankle,0]-p[op,0])/gap
+        lateral=_smooth((side-.06)/.28)
+        # Full suppression 0.025 body heights below ankle, zero 0.065 above.
+        vertical=_smooth((p[ankle,1]+h*.065-v[:,1])/(h*.09))
+        strength=lateral*vertical
+        rest=[i for i in range(len(p)) if i not in (ankle,foot,toe)]
+        penalty=-2*blend**2*np.log(np.maximum(1-strength,1e-12))
+        out[:,rest]+=penalty[:,None]
+        out[np.ix_(strength>=1-1e-8,rest)]=np.inf
+    if not np.isfinite(out).any(axis=1).all():raise ValueError('No remaining foot influences')
+    return out
