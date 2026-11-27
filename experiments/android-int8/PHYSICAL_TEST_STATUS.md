@@ -1,0 +1,8 @@
+# Native Android test status — 2026-11-27
+
+- APK build job 140691956500 succeeded (run 46054000212). APK 43,150,667 bytes; arm64-v8a native ONNX runtime and debug signature verified by CI. SHA-256 46540472647a023379f3cde8e63492415558070b425fcb0a6395dcda8b909bac independently matched downloaded artifact.
+- Native Java core desktop CPU: 19.572 s, VmHWM 1434 MiB, 14,382 vertices, 28,748 triangles, GLB 863,744 bytes. Independent GLB parsing and topology checks: watertight and consistent winding, zero zero-area faces, component sizes 27,748 / 952 / 24 / 24 triangles, finite positions/normals/vertex colors, COLOR_0 range 0.01256–0.96764.
+- CI visual inspection failed because trimesh represented the PBR material as TextureVisuals; fixed test/inspect_glb.py to read COLOR_0 directly (commit f6ec176677c0f2f2b297794735c4f1cacea2d49a). Independent local inspection and front/side/back previews passed rendering; full CI rerun of the fix not performed. No change to APK code in this fix.
+- Actual mesh still has stair-step surface and lost fine detail even with depth-buffered interpolated color/normal preview. Four disconnected closed components. Visual acceptance pending; no artificial claim of realistic quality.
+- TinyFish Firebase console eligibility check reached mandatory MFA screen (no projects visible). No device session started, no billing enabled. Samsung Remote Test Lab requires sign-in. Physical Realme C55 inference, heat, OS kill behavior, actual peak RAM, and Android UI screenshots remain unverified.
+- Model weights are not packaged in APK; import the pinned 433,359,857-byte INT8 encoder once, then run offline. R70 branch unchanged.
