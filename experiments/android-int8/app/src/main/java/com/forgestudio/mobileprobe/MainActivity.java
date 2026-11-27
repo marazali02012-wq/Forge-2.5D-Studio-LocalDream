@@ -71,7 +71,7 @@ public class MainActivity extends Activity{
    Bitmap b=load(selected);float[] input=preprocess(b);b.recycle();
    Engine.Mesh m=Engine.run(encoder,decoder,input,(float)meta.getDouble("radius"),(float)meta.getDouble("density_threshold"),64,this::log);
    File tmp=new File(getFilesDir(),"forge-phone.tmp");Engine.saveGlb(m,tmp);if(!tmp.renameTo(lastGlb))throw new IOException("GLB kaydedilemedi");
-   JSONObject j=new JSONObject();j.put("device",Build.MANUFACTURER+" "+Build.MODEL);j.put("android",Build.VERSION.RELEASE);j.put("abi",Build.SUPPORTED_ABIS[0]);j.put("vertices",m.v.size());j.put("triangles",m.f.size());j.put("elapsed_ms",m.elapsedMs);j.put("vmhwm_mib",m.hwmMiB);j.put("glb_bytes",lastGlb.length());j.put("grid",64);j.put("removed_faces",m.removedFaces);j.put("smoothing_weight",m.smoothingWeight);j.put("mode","raw-int8-cpu-one-thread");
+   JSONObject j=new JSONObject();j.put("device",Build.MANUFACTURER+" "+Build.MODEL);j.put("android",Build.VERSION.RELEASE);j.put("abi",Build.SUPPORTED_ABIS[0]);j.put("vertices",m.v.size());j.put("triangles",m.f.size());j.put("elapsed_ms",m.elapsedMs);j.put("vmhwm_mib",m.hwmMiB);j.put("glb_bytes",lastGlb.length());j.put("grid",64);j.put("surface",m.surface);j.put("removed_faces",m.removedFaces);j.put("smoothing_weight",m.smoothingWeight);j.put("mode","raw-int8-cpu-one-thread");
    try(OutputStream out=new FileOutputStream(lastReport)){out.write(j.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));}
    log("Gerçek 3D önizlemeler hazırlanıyor...");Bitmap[] next=new Bitmap[3];for(int i=0;i<3;i++)next[i]=preview(m,i);
    runOnUiThread(()->{if(views!=null)for(Bitmap old:views)old.recycle();views=next;image.setImageBitmap(views[0]);});
