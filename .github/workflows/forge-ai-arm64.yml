@@ -22,16 +22,19 @@ jobs:
           curl -fL --retry 2 -o ai-proof-output/robot.png https://raw.githubusercontent.com/VAST-AI-Research/TripoSR/main/examples/robot.png
           test "$(git hash-object ai-proof-output/robot.png)" = 31ce9687b54dddf2907a39f25b09d62bcbf2a8b0
           python -u experiments/ai-int8/mobile_probe.py --prepare
+      - name: Raw ONNX low memory
+        continue-on-error: true
+        run: FORGE_OFFLINE=1 FORGE_MODE=raw FORGE_THREADS=1 FORGE_OUTPUT=raw-output python -u experiments/ai-int8/mobile_probe.py
       - name: Convert to mobile ORT format
         run: python -m onnxruntime.tools.convert_onnx_models_to_ort ai-proof-output/models/triposr-encoder-int8.onnx --optimization_style Fixed --target_platform arm
       - name: ARM64 ORT low memory reconstruction
         run: |
-          FORGE_OFFLINE=1 FORGE_MODE=ort FORGE_OUTPUT=ort-output python -u experiments/ai-int8/mobile_probe.py
+          FORGE_OFFLINE=1 FORGE_MODE=ortfile FORGE_THREADS=1 FORGE_OUTPUT=ort-output python -u experiments/ai-int8/mobile_probe.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: forge-arm64-proof
           path: |
-            lean-output/
+            raw-output/
             ort-output/
           if-no-files-found: warn
