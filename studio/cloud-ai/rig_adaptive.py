@@ -178,6 +178,45 @@ def run(src,out,texture=False,save_poses=True):
     cand=np.flatnonzero((side*(v[:,0]-cx)>0)&(y<.09*h)&(influence>.45))
     feet.append(cand[y[cand]<=np.quantile(y[cand],.30)] if len(cand)>=12 else np.array([],dtype=int))
    if all(len(a)>=8 for a in feet):
+    # R70.35 IK candidate: solve the hip/knee/ankle triangle while
+    # retaining the existing global foot orientation. Only lower the
+    # support ankle by the measured plantar gap; preserve bone lengths.
+    def rotate_between(a,b):
+     a=a/np.linalg.norm(a);b=b/np.linalg.norm(b)
+     axis=np.cross(a,b);length=np.linalg.norm(axis);dot=np.clip(a@b,-1.,1.)
+     if length<1e-8:
+      if dot>0:return np.eye(3)
+      basis=np.eye(3)[np.argmin(abs(a))]
+      axis=np.cross(a,basis);axis/=np.linalg.norm(axis)
+      return Rotation.from_rotvec(axis*np.pi).as_matrix()
+     return Rotation.from_rotvec(axis/length*np.arctan2(length,dot)).as_matrix()
+    def lower_ankle(q,k,amount):
+     if amount<1e-7:return q
+     R=Rotation.from_quat(q).as_matrix()
+     u=P[k+1]-P[k];w=P[k+2]-P[k+1]
+     a,b=np.linalg.norm(u),np.linalg.norm(w)
+     if min(a,b)<1e-7:return q
+     thigh=R[k];shin=thigh@R[k+1];foot=shin@R[k+2]
+     knee=thigh@u;ankle=knee+shin@w
+     target=ankle-np.array([0.,amount,0.]);distance=np.linalg.norm(target)
+     if distance<1e-8:return q
+     direction=target/distance
+     d=np.clip(distance,abs(a-b)+1e-7,a+b-1e-7)
+     along=(a*a-b*b+d*d)/(2*d)
+     bend=knee-direction*(knee@direction)
+     if np.linalg.norm(bend)<1e-7:
+      basis=np.eye(3)[np.argmin(abs(direction))]
+      bend=basis-direction*(basis@direction)
+     bend/=np.linalg.norm(bend)
+     new_knee=along*direction+np.sqrt(max(0.,a*a-along*along))*bend
+     new_ankle=d*direction
+     new_thigh=rotate_between(knee,new_knee)@thigh
+     new_shin=rotate_between(shin@w,new_ankle-new_knee)@shin
+     res=q.copy()
+     res[k]=Rotation.from_matrix(new_thigh).as_quat()
+     res[k+1]=Rotation.from_matrix(new_thigh.T@new_shin).as_quat()
+     res[k+2]=Rotation.from_matrix(new_shin.T@foot).as_quat()
+     return res
     def build(mode):
      keys=[];offsets=[]
      for f in t/dur:
@@ -190,6 +229,14 @@ def run(src,out,texture=False,save_poses=True):
         factor=(1. if side==stance else .35) if mode==1 else 1.
         ang[k+2,0]=-(ang[k,0]+ang[k+1,0])*factor
       q=Rotation.from_euler('xyz',ang,degrees=True).as_quat();sv=skin(q)
+      if mode==3:
+       # Two bounded IK iterations; fade out at stance exchange.
+       # Skinning, rather than the ankle position alone, sets the gap.
+       blend=min(abs(phase)*2,1.)
+       for _ in range(2):
+        gap=max(0.,float(sv[feet[stance],1].min()-sv[:,1].min()))
+        q=lower_ankle(q,18 if stance==0 else 14,min(gap,.04*h)*blend)
+        sv=skin(q)
       tr=np.array([0.,-sv[:,1].min(),0.])
       if mode==0:
        old_stance=1 if phase>=0 else 0
@@ -218,12 +265,23 @@ def run(src,out,texture=False,save_poses=True):
       strains.append(float(np.quantile(lengths[mask]/rest[mask],.99)))
       motions.append(float(np.max(np.linalg.norm(sv-v,axis=1))/h))
      return dict(samples=121,drift=float(np.mean(drift)),tilt=float(np.mean(tilt)),gap=float(np.mean(gaps)),floor=max(floor_errors),strain=max(strains),motion=max(motions))
-    variants=[build(i) for i in range(3)]
+    variants=[build(i) for i in range(4)]
     metrics=[evaluate(*item) for item in variants];base=metrics[0]
     score=lambda m:m['drift']+m['tilt']+m['gap']
     allowed=[i for i in (1,2) if metrics[i]['strain']<1.5 and metrics[i]['motion']>=.70*base['motion'] and metrics[i]['floor']<=max(.006,base['floor']*1.10) and metrics[i]['gap']<=base['gap']+.001 and metrics[i]['tilt']<=base['tilt']+.001 and score(metrics[i])<.85*score(base)]
     chosen=min(allowed,key=lambda i:score(metrics[i])) if allowed else 0
-    selected_contact=variants[chosen]
+    # IK must improve the actual support gap, without weakening the
+    # selected R70.35 candidate beyond explicit relative tolerances.
+    ik=metrics[3];reference=metrics[chosen]
+    if (ik['strain']<1.5 and ik['strain']<=reference['strain']*1.03
+        and ik['motion']>=.95*reference['motion']
+        and ik['floor']<=max(.001,reference['floor']*1.10)
+        and ik['drift']<=reference['drift']+.0001
+        and ik['tilt']<=reference['tilt']+.0005
+        and ik['gap']<.85*reference['gap']
+        and score(ik)<score(reference)):
+     chosen=3
+    selected_contact=variants[chosen] if chosen else None
     contact_report={'selected':chosen,'baseline':base,'candidates':metrics[1:],'foot_vertices':[len(a) for a in feet]}
    else:contact_report={'selected':0,'reason':'insufficient reliable plantar vertices'}
   for frame_index,f in enumerate(t/dur):
