@@ -1,0 +1,40 @@
+name: R70.28 real AI GLB editor integration
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['studio/cloud-ai/ai_import_patch.mjs','studio/cloud-ai/component_lod.py','studio/cloud-ai/import_qa.mjs','.github/workflows/forge-r70-import.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-real-cpu-ai
+          run-id: 46062073571
+          github-token: ${{ github.token }}
+          path: inputs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 vtk==9.6.2
+      - run: python studio/cloud-ai/component_lod.py inputs/cloud-quality-qa/relaxed.glb r70-28-qa/quality
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts playwright@1.56.1 gltf-validator@2.0.0-dev.3.10
+      - run: npx playwright install chromium
+      - run: node studio/cloud-ai/ai_import_patch.mjs
+      - run: node studio/cloud-ai/import_qa.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r70-28-editor-qa
+          path: |
+            Forge_R70_28_AI_Import.html
+            r70-28-qa/
