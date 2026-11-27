@@ -1,0 +1,11 @@
+<dialog id="rigDialog" style="box-sizing:border-box;width:96vw;height:94vh;padding:6px;background:#182232;color:white">
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="rigClip" aria-label="Animasyon"></select><a id="saveRig" download="Forge_Animasyonlu.glb" style="color:white">GLB indir</a><span id="rigStatus"></span><button id="closeRig">Kapat</button></div>
+<model-viewer id="animatedModel" camera-controls touch-action="none" interaction-prompt="none" style="display:block;width:100%;height:calc(100% - 36px)" alt="Animasyonlu karakter"></model-viewer>
+</dialog>
+<dialog id="aiTools" style="max-width:90vw;background:#202a36;color:white">
+<p style="margin-top:0">Forge AI sunucusu ile üretim</p>
+<button data-forge-action="forgeAiGenerate">Resimden 3D üret</button>
+<button data-forge-action="forgeRigGenerate">Resimden animasyonlu GLB</button>
+<button data-forge-action="openRig">Animasyonlu GLB aç</button>
+<button id="closeAiTools">Kapat</button>
+</dialog>

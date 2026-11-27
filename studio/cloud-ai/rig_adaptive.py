@@ -4,7 +4,7 @@ from scipy.spatial.transform import Rotation
 from scipy.sparse import coo_matrix,diags
 NAMES=['root','hips','spine','chest','neck','head','shoulder.L','upperarm.L','forearm.L','hand.L','shoulder.R','upperarm.R','forearm.R','hand.R','thigh.L','shin.L','foot.L','toe.L','thigh.R','shin.R','foot.R','toe.R','weapon','cape.1','cape.2','shield']
 PARENT=[-1,0,1,2,3,4,3,6,7,8,3,10,11,12,1,14,15,16,1,18,19,20,13,3,23,9]
-def run(src,out):
+def run(src,out,texture=False):
  out=pathlib.Path(out);out.mkdir(exist_ok=True,parents=True)
  m=trimesh.load(src,force='mesh',process=False);v=np.asarray(m.vertices)[:,[1,2,0]].copy();v-= (v.min(0)+v.max(0))/2;v*=2/np.ptp(v,axis=0).max();v[:,1]-=v[:,1].min();m.vertices=v;h=v[:,1].max();assert m.is_watertight and h>0
  def loops(y):
@@ -77,7 +77,7 @@ def run(src,out):
  corewidth=min(abs(P[14,0]-cx),abs(P[18,0]-cx))*.78
  core=np.clip((corewidth-np.abs(v[:,0]-cx))/(.035*h),0,1)*np.clip((y-hip_y+.03*h)/(.075*h),0,1)*np.clip((neck*.87-y)/(.09*h),0,1)
  limb=list(range(6,22))
- for _ in range(4):
+ for _ in range(20):
   W=.65*W+.35*(A@W)
   W[:,limb]*=(1-core[:,None]);W/=W.sum(1)[:,None]
 
@@ -92,13 +92,32 @@ def run(src,out):
   views.append(view);r={'bufferView':len(views)-1,'componentType':ctype,'count':len(a),'type':typ}
   if typ=='SCALAR' and ctype==5126 or typ=='VEC3' and target==34962 and len(acc)==0:r.update(min=np.atleast_1d(a.min(0)).tolist(),max=np.atleast_1d(a.max(0)).tolist())
   acc.append(r);return len(acc)-1
- pos=add(v.astype('f4'),'VEC3',5126,34962);normal=add(np.asarray(m.vertex_normals,dtype='f4'),'VEC3',5126,34962);color=add(np.asarray(m.visual.vertex_colors[:,:3],dtype='f4')/255,'VEC3',5126,34962);ji=add(ids,'VEC4',5123,34962);wi=add(wt,'VEC4',5126,34962);idx=add(m.faces.astype('u4').ravel(),'SCALAR',5125,34963)
+ colors=np.asarray(m.visual.vertex_colors[:,:3],dtype='f4')/255
+ mapping=m.faces.ravel() if texture else np.arange(len(v))
+ pos=add(v[mapping].astype('f4'),'VEC3',5126,34962)
+ normal=add(np.asarray(m.vertex_normals[mapping],dtype='f4'),'VEC3',5126,34962)
+ ji=add(ids[mapping],'VEC4',5123,34962);wi=add(wt[mapping],'VEC4',5126,34962)
+ attributes={'POSITION':pos,'NORMAL':normal,'JOINTS_0':ji,'WEIGHTS_0':wi}
+ if texture:
+  from texture_atlas import bake_faces
+  uv,png=bake_faces(m.faces,colors)
+  attributes['TEXCOORD_0']=add(uv,'VEC2',5126,34962)
+  data.extend(bytes((-len(data))%4))
+  image_view=len(views);views.append({'buffer':0,'byteOffset':len(data),'byteLength':len(png)});data.extend(png)
+ else:
+  attributes['COLOR_0']=add(colors,'VEC3',5126,34962)
+
  nodes=[{'name':name,'translation':(P[j]-(P[PARENT[j]] if j else 0)).tolist()} for j,name in enumerate(NAMES)]
  for j,n in enumerate(nodes):
   child=[k for k in range(26) if PARENT[k]==j]
   if child:n['children']=child
- nodes.append({'name':'AI reconstructed robot','mesh':0,'skin':0});ib=np.tile(np.eye(4),(26,1,1));ib[:,:3,3]=-P;ibm=add(ib.transpose(0,2,1).astype('f4'),'MAT4',5126)
- gltf={'asset':{'version':'2.0','generator':'Forge R70.30 experimental cross-section rig'},'scene':0,'scenes':[{'nodes':[0,26]}],'nodes':nodes,'skins':[{'joints':list(range(26)),'skeleton':0,'inverseBindMatrices':ibm}],'meshes':[{'primitives':[{'attributes':{'POSITION':pos,'NORMAL':normal,'COLOR_0':color,'JOINTS_0':ji,'WEIGHTS_0':wi},'indices':idx,'material':0}]}],'materials':[{'pbrMetallicRoughness':{'baseColorFactor':[1,1,1,1],'metallicFactor':0,'roughnessFactor':.8}}],'animations':[]}
+ nodes.append({'name':'AI character','mesh':0,'skin':0});ib=np.tile(np.eye(4),(26,1,1));ib[:,:3,3]=-P;ibm=add(ib.transpose(0,2,1).astype('f4'),'MAT4',5126)
+ gltf={'asset':{'version':'2.0','generator':'Forge R70.33 adaptive rig'},'scene':0,'scenes':[{'nodes':[0,26]}],'nodes':nodes,'skins':[{'joints':list(range(26)),'skeleton':0,'inverseBindMatrices':ibm}],'meshes':[{'primitives':[{'attributes':attributes,'material':0}]}],'materials':[{'pbrMetallicRoughness':{'baseColorFactor':[1,1,1,1],'metallicFactor':0,'roughnessFactor':.8}}],'animations':[]}
+ if texture:
+  gltf.update(images=[{'bufferView':image_view,'mimeType':'image/png'}],textures=[{'source':0,'sampler':0}],samplers=[{'magFilter':9729,'minFilter':9729,'wrapS':33071,'wrapT':33071}])
+  gltf['materials'][0]['pbrMetallicRoughness']['baseColorTexture']={'index':0}
+ else:
+  gltf['meshes'][0]['primitives'][0]['indices']=add(m.faces.astype('u4').ravel(),'SCALAR',5125,34963)
  edges=m.edges_unique;rest=np.linalg.norm(v[edges[:,0]]-v[edges[:,1]],axis=1);mask=rest>1e-5;reports={};frames={}
  def skin(q,translation=None):
   R=Rotation.from_quat(q).as_matrix();A=np.zeros((26,3,3));T=np.zeros((26,3));
@@ -109,24 +128,43 @@ def run(src,out):
   return sum(wt[:,k,None]*(np.einsum('nij,nj->ni',A[ids[:,k]],v-P[ids[:,k]])+T[ids[:,k]]) for k in range(4))
  identity=np.tile([0.,0,0,1],(26,1));assert np.max(np.abs(skin(identity)-v))<1e-6
  for clip,dur in [('idle',1.6),('walk',.9),('attack',.8),('hurt',.5),('death',1.4)]:
-  t=np.linspace(0,dur,31);qs=[];ts=[];rat=[];moved=[]
-  for f in t/dur:
+  t=np.linspace(0,dur,31);qs=[];ts=[];rat=[];moved=[];floor=[];sole_traces=[]
+  soles=[np.flatnonzero((y<.06*h)&(side*(v[:,0]-cx)>0)) for side in (-1,1)]
+  def pose_angles(f):
    x=np.sin(f*2*np.pi);pulse=np.sin(f*np.pi);ang=np.zeros((26,3));
    if clip=='idle':ang[5,1]=5*x;ang[3,2]=2*x
    if clip=='walk':
     for k,sign in [(14,1),(18,-1)]:ang[k,0]=sign*18*x;ang[k+1,0]=12*max(0,sign*x);ang[k+2,0]=-5*max(0,sign*x)
     ang[7,0]=-15*x;ang[11,0]=15*x
-   if clip=='attack':ang[11,0]=-32*pulse;ang[12,0]=-40*pulse;ang[3,1]=-12*pulse
+   if clip=='attack':ang[11,0]=-32*pulse;ang[12,0]=-40*pulse;ang[3,1]=-12*pulse;ang[13,2]=-8*pulse
    if clip=='hurt':ang[3,0]=-12*pulse;ang[5,2]=10*pulse
    if clip=='death':ang[0,0]=-82*f;ang[7,2]=10*f;ang[11,2]=-10*f
+   return ang
+  # Fused armor may stretch at full range. Preserve at least 70% of the clip;
+  # retain the full 31-frame rejection gate for every selected amplitude.
+  gain=1.
+  if clip in ('walk','attack'):
+   for gain in (1.,.85,.70):
+    strain=[]
+    for phase in ((.25,.75) if clip=='walk' else (.5,)):
+     peak=skin(Rotation.from_euler('xyz',pose_angles(phase)*gain,degrees=True).as_quat())
+     lengths=np.linalg.norm(peak[edges[:,0]]-peak[edges[:,1]],axis=1)
+     strain.append(np.quantile(lengths[mask]/rest[mask],.99))
+    if max(strain)<1.5:break
+  for f in t/dur:
+   ang=pose_angles(f)*gain
    q=Rotation.from_euler('xyz',ang,degrees=True).as_quat();sv=skin(q);tr=np.array([0,-sv[:,1].min(),0]);sv+=tr;qs.append(q);ts.append(tr);r=np.linalg.norm(sv[edges[:,0]]-sv[edges[:,1]],axis=1)[mask]/rest[mask];rat.append(np.quantile(r,.99));moved.append(np.max(np.linalg.norm(sv-v,axis=1)))
+   floor.append(float(sv[:,1].min()));sole_traces.append([sv[sole].mean(0) if len(sole) else [np.nan]*3 for sole in soles])
    if abs(f-.5)<1e-5 or abs(f-7/30)<1e-5 or f==1:frames[clip+('_mid' if abs(f-.5)<1e-5 else '_peak' if f<1 else '_end')]=sv
   qs=np.asarray(qs,dtype='f4');ti=add(t.astype('f4'),'SCALAR',5126);sam=[];channels=[]
   for j in range(26):
    if np.max(np.abs(qs[:,j]-identity[j]))<1e-7:continue
    sam.append({'input':ti,'output':add(qs[:,j].copy(),'VEC4',5126),'interpolation':'LINEAR'});channels.append({'sampler':len(sam)-1,'target':{'node':j,'path':'rotation'}})
   sam.append({'input':ti,'output':add(np.asarray(ts+P[0],dtype='f4'),'VEC3',5126),'interpolation':'LINEAR'});channels.append({'sampler':len(sam)-1,'target':{'node':0,'path':'translation'}})
-  gltf['animations'].append({'name':clip,'samplers':sam,'channels':channels});reports[clip]={'frames':31,'p99_edge_ratio_max':float(max(rat)),'max_motion':float(max(moved)),'accepted':bool(max(rat)<1.5 and max(moved)>.01)}
+  gltf['animations'].append({'name':clip,'samplers':sam,'channels':channels});reports[clip]={'amplitude':gain,'frames':31,'p99_edge_ratio_max':float(max(rat)),'max_motion':float(max(moved)),'accepted':bool(max(rat)<1.5 and max(moved)>.01)}
+  reports[clip]['max_floor_error']=max(abs(value) for value in floor)
+  if clip=='walk' and all(len(sole) for sole in soles):
+   traces=np.asarray(sole_traces);reports[clip]['sole_horizontal_excursion_over_height']=[float(np.linalg.norm(np.ptp(traces[:,i][:,[0,2]],axis=0))/h) for i in (0,1)]
  gltf.update(bufferViews=views,accessors=acc,buffers=[{'byteLength':len(data)}]);jb=json.dumps(gltf,separators=(',',':')).encode();jb+=b' '*((-len(jb))%4);data.extend(b'\0'*((-len(data))%4));(out/'robot_rig_candidate.glb').write_bytes(struct.pack('<4sII',b'glTF',2,28+len(jb)+len(data))+struct.pack('<I4s',len(jb),b'JSON')+jb+struct.pack('<I4s',len(data),b'BIN\0')+data)
  report={'experimental':True,'joints':26,'triangles':len(m.faces),'neck_height':float(neck),'joint_positions':dict(zip(NAMES,P.tolist())),'rest_error':float(np.max(np.abs(skin(identity)-v))),'clips':reports,'note':'Adaptive bilateral section prototype, no universal rig or visual approval.'};(out/'report.json').write_text(json.dumps(report,indent=2));np.savez_compressed(out/'poses.npz',vertices=v,faces=m.faces,colors=m.visual.vertex_colors,joints=P,parents=PARENT,**frames);print(json.dumps(report['clips'],indent=2))
-if __name__=='__main__':run(sys.argv[1],sys.argv[2])
+if __name__=='__main__':run(sys.argv[1],sys.argv[2],texture='--texture' in sys.argv[3:])

@@ -1,4 +1,4 @@
-import json,pathlib,struct,time,os
+import hashlib,json,pathlib,struct,time,os,resource
 import torch
 from PIL import Image,ImageDraw
 from huggingface_hub import hf_hub_download
@@ -16,7 +16,7 @@ resolution=int(os.getenv("FORGE_RESOLUTION","128"))
 assert resolution in (128,192,256)
 report={"device":"cpu","real_generation":False,"model":"stabilityai/TripoSR","resolution":resolution}
 try:
-    torch.set_num_threads(4)
+    torch.set_num_threads(max(1,min(4,int(os.getenv("FORGE_CPU_THREADS","4")))))
     im=Image.new("RGB",(384,384),(128,128,128));d=ImageDraw.Draw(im)
     d.polygon([(88,150),(204,85),(310,146),(196,211)],fill=(100,175,220))
     d.polygon([(88,150),(196,211),(196,322),(88,262)],fill=(42,99,166))
@@ -36,12 +36,12 @@ try:
         bg=Image.new("RGBA",raw.size,(128,128,128,255))
         bg.alpha_composite(raw)
         im=bg.convert("RGB")
-        report["input"]="upstream robot sample (QA only)"
+        report["input_sha256"]=hashlib.sha256(pathlib.Path(sample).read_bytes()).hexdigest()
     else:
         report["input"]="synthetic blue cube"
     im.save(out/"input.png")
     start=time.monotonic()
-    model=TSR.from_pretrained("stabilityai/TripoSR",config_name="config.yaml",weight_name="model.ckpt").eval().to("cpu")
+    model=TSR.from_pretrained(os.getenv("FORGE_MODEL_PATH","stabilityai/TripoSR"),config_name="config.yaml",weight_name="model.ckpt").eval().to("cpu")
     model.renderer.set_chunk_size(4096)
     report["load_seconds"]=time.monotonic()-start
     with torch.inference_mode():
@@ -55,7 +55,7 @@ try:
     # Preserve actual AI geometry and per-vertex colors; test a conservative
     # surface relaxation with explicit orientation and topology gates.
     mesh.export(out/"generated.glb",include_normals=True)
-    if resolution>128:
+    if resolution>128 or os.getenv("FORGE_RELAX")=="1":
         from trimesh.smoothing import filter_taubin
         original=mesh.copy()
         extent=float(np.linalg.norm(original.extents))
@@ -92,5 +92,6 @@ try:
 except Exception as e:
     report["error"]=repr(e)
 finally:
+    report["peak_rss_kib_linux"]=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     (out/"report.json").write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
 if not report["real_generation"]:raise SystemExit(1)
