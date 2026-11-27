@@ -1,0 +1,4 @@
+# Forge Studio isolated cloud AI test
+No Arena Forge Pro infrastructure changes. TripoSR official public Gradio Space, anonymous single synthetic image, 128 marching-cubes resolution. No account tokens, no payment, no retries. API quota or service failure is an explicit failure, not simulated success.
+Render's 750 free instance hours are shared across workspace services; no new compute service provisioned to protect the game. Existing Forge static site left intact. Supabase currently only has Arena Forge Pro project; do not use it for Forge Studio. Netlify new deployment deferred until provider probe proves real generation; no empty site creation or shared billing risk.
+A successful GLB is an unrigged reconstruction; must be inspected and separately integrated with existing rig, UV and import pipeline. Anonymous public Space is not a production SLA.
