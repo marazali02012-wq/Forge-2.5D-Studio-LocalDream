@@ -1,0 +1,33 @@
+name: Forge independent TripoSR CPU inference
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['studio/cloud-ai/cpu_probe.py','.github/workflows/forge-cloud-cpu.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch upstream and install CPU-only dependencies
+        run: |
+          git init /tmp/triposr
+          git -C /tmp/triposr fetch --depth 1 https://github.com/VAST-AI-Research/TripoSR.git 107cefdc244c39106fa830359024f6a2f1c78871
+          git -C /tmp/triposr checkout FETCH_HEAD
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 omegaconf==2.3.0 Pillow==10.4.0 einops==0.7.0 transformers==4.35.0 trimesh==4.0.5 huggingface-hub==0.26.5 'rembg[cpu]==2.0.61' imageio==2.36.0 imageio-ffmpeg==0.5.1
+          # Only substitute the CPU marching cubes implementation, not model inference.
+          printf 'def marching_cubes(*args, **kwargs):\n    raise RuntimeError("CPU backend not installed")\n' > /tmp/triposr/torchmcubes.py
+      - name: Real model weights and image inference
+        run: PYTHONPATH=/tmp/triposr timeout 600 python studio/cloud-ai/cpu_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-real-cpu-ai
+          path: cloud-cpu-qa/
