@@ -11,7 +11,7 @@ const data=JSON.parse(fs.readFileSync(path.join(dir,'default_weights.mhw'),'utf8
 const official=JSON.parse(fs.readFileSync(path.join(dir,'default.mhskel'),'utf8'));
 assert.equal(data.license,'CC0');assert.equal(official.license,'CC0');
 for(const v of raw)assert.ok(v.every(Number.isFinite));
-const Ffiles=['f3d_math.js','f3d_rig.js'];
+const Ffiles=['f3d_math.js','f3d_rig.js','future-reference/f3d_anim.js'];
 for(const f of Ffiles)new Function(fs.readFileSync(path.join('studio/r70-reference',f),'utf8'))();
 const F=globalThis.Forge3D,names=F.BONES.map(b=>b[0]),ids=new Map(names.map((n,i)=>[n,i]));
 assert.equal(names.length,26);
@@ -82,7 +82,7 @@ for(const p of parts){
   const order=ww.map((w,j)=>[j,w]).sort((a,b)=>b[1]-a[1]),sum=order.slice(0,4).reduce((s,x)=>s+x[1],0),total=ww.reduce((s,x)=>s+x,0);
   assert.ok(sum>0&&Number.isFinite(sum)&&total>0);
   maxDropped=Math.max(maxDropped,1-sum/total);
-  for(let j=0;j<4;j++){joints[i*4+j]=order[j][0];wts[i*4+j]=order[j][1]/sum}
+  for(let j=0;j<4;j++){wts[i*4+j]=order[j][1]/sum;joints[i*4+j]=wts[i*4+j]>0?order[j][0]:0}
   maxSumError=Math.max(maxSumError,Math.abs(wts.slice(i*4,i*4+4).reduce((s,x)=>s+x,0)-1));
  }
  const primitive=doc.createPrimitive().setAttribute('POSITION',acc('position','VEC3',positions)).setAttribute('NORMAL',acc('normal','VEC3',normals)).setAttribute('COLOR_0',acc('color','VEC3',color)).setAttribute('JOINTS_0',acc('joint','VEC4',joints)).setAttribute('WEIGHTS_0',acc('weight','VEC4',wts)).setIndices(acc('index','SCALAR',m.index));
@@ -91,7 +91,41 @@ for(const p of parts){
  report.parts.push({name:p.name,vertices:n,triangles:m.index.length/3,weightSource:p.name.startsWith('outfit.')?'clipped source triangle interpolation':p.name==='human.body'?'exact source coordinate match':'rigid head'});
 }
 assert.ok(maxSumError<1e-6);assert.equal(report.parts.length,10);
-report.maxDroppedWeight=maxDropped;report.maxWeightSumError=maxSumError;report.note='Bind-pose skin candidate only; no animation, UV, collision, visual or Android approval. Source weights reduced to 26 joints and four influences. Accessory joints without geometry are placeholders.';
+// Retarget existing local rotation clips by bone name. This is an experiment:
+// source A-pose and target bind posture differ, so test deformation, not merely GLB syntax.
+const ref=F.buildSkeleton(),fps=30;
+report.clips={};
+const height=Math.max(...pos.map(v=>v[1]))-Math.min(...pos.map(v=>v[1]));
+const factor=height/ref.body.height;
+for(const clip of F.CLIP_KEYS){
+ const c=F.CLIPS[clip],n=Math.ceil(c.duration*fps)+1;
+ const times=Float32Array.from({length:n},(_,i)=>i*c.duration/(n-1));
+ const poses=Array.from(times,t=>F.sampleClip(ref,clip,t/c.duration).pose);
+ const anim=doc.createAnimation(clip);
+ const time=acc(clip+' time','SCALAR',times);
+ let channels=0;
+ for(let j=0;j<26;j++){
+  const rotations=new Float32Array(n*4);
+  for(let i=0;i<n;i++){
+   let q=poses[i].rot[j].slice(),len=Math.hypot(...q);assert.ok(len>0&&Number.isFinite(len));q=q.map(x=>x/len);
+   if(i&&q.reduce((s,x,k)=>s+x*rotations[(i-1)*4+k],0)<0)q=q.map(x=>-x);
+   rotations.set(q,i*4);
+  }
+  if(rotations.some((x,i)=>Math.abs(x-(i%4===3?1:0))>1e-6)){
+   const sampler=doc.createAnimationSampler().setInput(time).setOutput(acc(clip+' '+names[j]+' rotation','VEC4',rotations)).setInterpolation('LINEAR');
+   anim.addSampler(sampler).addChannel(doc.createAnimationChannel().setSampler(sampler).setTargetNode(bones[j]).setTargetPath('rotation'));channels++;
+  }
+  if(poses.some(p=>p.trans[j].some(x=>Math.abs(x)>1e-7))){
+   const rest=bones[j].getTranslation(),v=new Float32Array(n*3);
+   for(let i=0;i<n;i++)v.set(rest.map((x,k)=>x+poses[i].trans[j][k]*factor),i*3);
+   const sampler=doc.createAnimationSampler().setInput(time).setOutput(acc(clip+' '+names[j]+' translation','VEC3',v)).setInterpolation('LINEAR');
+   anim.addSampler(sampler).addChannel(doc.createAnimationChannel().setSampler(sampler).setTargetNode(bones[j]).setTargetPath('translation'));channels++;
+  }
+ }
+ assert.ok(channels>0);report.clips[clip]={channels,frames:n,duration:c.duration};
+}
+report.skinOnly=false;
+report.maxDroppedWeight=maxDropped;report.maxWeightSumError=maxSumError;report.note='Experimental bone-name rotation transfer to current anatomy; animation quality, UV, collision, visual and Android approval remain open. Source weights reduced to 26 joints and four influences. Accessory joints without geometry are placeholders.';
 const glb=await new NodeIO().writeBinary(doc);fs.writeFileSync(path.join(dir,'anatomy-skin.glb'),glb);
 const valid=await validator.validateBytes(glb,{uri:'anatomy-skin.glb'});report.validation={errors:valid.issues.numErrors,warnings:valid.issues.numWarnings};
-fs.writeFileSync(path.join(dir,'validation.json'),JSON.stringify(valid,null,2));fs.writeFileSync(path.join(dir,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));assert.equal(valid.issues.numErrors,0);
+fs.writeFileSync(path.join(dir,'validation.json'),JSON.stringify(valid,null,2));fs.writeFileSync(path.join(dir,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));assert.equal(valid.issues.numErrors,0);assert.equal(valid.issues.numWarnings,0);
