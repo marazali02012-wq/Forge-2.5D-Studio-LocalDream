@@ -1,4 +1,4 @@
-import os, pathlib, subprocess, sys, json
+import os, pathlib, subprocess, sys, json, hashlib, math
 import numpy as np
 from PIL import Image,ImageDraw
 out=pathlib.Path('r70-35-qa');out.mkdir(exist_ok=True)
@@ -7,7 +7,7 @@ results={}
 # The inputs are actual prior TripoSR inference outputs; no synthetic 3D substitutes.
 for name in ['robot','knight']:
  src=pathlib.Path('inputs')/name/'r70-29-qa/real-generated-raw.glb'
- results[name]={}
+ results[name]={'source_sha256':hashlib.sha256(src.read_bytes()).hexdigest()}
  for mode in ['baseline','candidate']:
   dest=out/name/mode
   env=dict(os.environ,FORGE_CONTACT_QA='1' if mode=='candidate' else '0')
@@ -31,6 +31,21 @@ for name in ['robot','knight']:
   canvas.save(dest/'walk_visual.png')
   (dest/'poses.npz').unlink()
  results[name]['comparison']=results[name]['candidate']['walk'].get('contact_r7035')
- assert results[name]['comparison'] is not None
+ c=results[name]['comparison']
+ assert c is not None
+ if 'candidates' in c:
+  assert len(c['candidates'])==3,'Missing experimental IK candidate'
+  for m in [c['baseline']]+c['candidates']:
+   assert m['samples']==121
+   assert all(math.isfinite(m[k]) and m[k]>=0 for k in ('drift','tilt','gap','floor','strain','motion'))
+  assert c['selected'] in range(4)
+  if c['selected']:
+   actual=c['candidates'][c['selected']-1]
+   assert actual['strain']<1.5
+   assert actual['motion']>=.70*c['baseline']['motion']
+ else:
+  assert c['selected']==0 and c.get('reason')
+ if c['selected']==0:
+  assert (out/name/'baseline'/'robot_rig_candidate.glb').read_bytes()==(out/name/'candidate'/'robot_rig_candidate.glb').read_bytes(),'Fallback must preserve baseline bytes'
 (out/'comparison.json').write_text(json.dumps(results,indent=2))
 print(json.dumps({k:v['comparison'] for k,v in results.items()},indent=2))
