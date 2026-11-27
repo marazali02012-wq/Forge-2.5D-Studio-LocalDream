@@ -1800,7 +1800,7 @@ function getManifold(){
   if(MANIFOLD_WASM_B64.startsWith("__FORGE"))throw Error("Tek dosyalı derlenmiş sürüm gerekli");
   const bytes=Uint8Array.from(atob(MANIFOLD_WASM_B64),c=>c.charCodeAt(0));
   const url=URL.createObjectURL(new Blob([Uint8Array.from(atob(MANIFOLD_JS_B64),c=>c.charCodeAt(0))],{type:"text/javascript"}));
-  try{const {default:Module}=await import(url);const api=await Module({wasmBinary:bytes});api.setup();return api}finally{URL.revokeObjectURL(url)}
+  try{const {default:Module}=await import(url);const api=await Module({wasmBinary:bytes,locateFile:()=>"manifold.wasm"});api.setup();return api}finally{URL.revokeObjectURL(url)}
  })().catch(e=>{manifoldPromise=null;throw e});
  return manifoldPromise;
 }
