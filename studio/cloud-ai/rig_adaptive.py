@@ -229,10 +229,11 @@ def run(src,out,texture=False,save_poses=True):
         factor=(1. if side==stance else .35) if mode==1 else 1.
         ang[k+2,0]=-(ang[k,0]+ang[k+1,0])*factor
       q=Rotation.from_euler('xyz',ang,degrees=True).as_quat();sv=skin(q)
-      if mode==3:
+      if mode>=3:
        # Two bounded IK iterations; fade out at stance exchange.
        # Skinning, rather than the ankle position alone, sets the gap.
-       blend=min(abs(phase)*2,1.)
+       strength={3:1.,4:.25,5:.50,6:.75}[mode]
+       blend=min(abs(phase)*2,1.)*strength
        for _ in range(2):
         gap=max(0.,float(sv[feet[stance],1].min()-sv[:,1].min()))
         q=lower_ankle(q,18 if stance==0 else 14,min(gap,.04*h)*blend)
@@ -265,7 +266,7 @@ def run(src,out,texture=False,save_poses=True):
       strains.append(float(np.quantile(lengths[mask]/rest[mask],.99)))
       motions.append(float(np.max(np.linalg.norm(sv-v,axis=1))/h))
      return dict(samples=121,drift=float(np.mean(drift)),tilt=float(np.mean(tilt)),gap=float(np.mean(gaps)),floor=max(floor_errors),strain=max(strains),motion=max(motions))
-    variants=[build(i) for i in range(4)]
+    variants=[build(i) for i in range(7)]
     metrics=[evaluate(*item) for item in variants];base=metrics[0]
     score=lambda m:m['drift']+m['tilt']+m['gap']
     allowed=[i for i in (1,2) if metrics[i]['strain']<1.5 and metrics[i]['motion']>=.70*base['motion'] and metrics[i]['floor']<=max(.006,base['floor']*1.10) and metrics[i]['gap']<=base['gap']+.001 and metrics[i]['tilt']<=base['tilt']+.001 and score(metrics[i])<.85*score(base)]
@@ -281,8 +282,21 @@ def run(src,out,texture=False,save_poses=True):
         and ik['gap']<.85*reference['gap']
         and score(ik)<score(reference)):
      chosen=3
+    # Keep the previously accepted full-strength result as a hard
+    # reference; partial IK cannot replace it merely by reducing motion.
+    reference=metrics[chosen]
+    partial=[i for i in (4,5,6) if metrics[i]['strain']<1.5
+        and metrics[i]['strain']<=reference['strain']*1.03
+        and metrics[i]['motion']>=.95*reference['motion']
+        and metrics[i]['floor']<=max(.001,reference['floor']*1.10)
+        and metrics[i]['drift']<=reference['drift']+.0001
+        and metrics[i]['tilt']<=reference['tilt']+.0005
+        and metrics[i]['gap']<.85*reference['gap']
+        and score(metrics[i])<score(reference)]
+    previous=chosen
+    if partial:chosen=min(partial,key=lambda i:score(metrics[i]))
     selected_contact=variants[chosen] if chosen else None
-    contact_report={'selected':chosen,'baseline':base,'candidates':metrics[1:],'foot_vertices':[len(a) for a in feet]}
+    contact_report={'selected':chosen,'previous_selected':previous,'baseline':base,'candidates':metrics[1:],'ik_strengths':[1.,.25,.50,.75],'foot_vertices':[len(a) for a in feet]}
    else:contact_report={'selected':0,'reason':'insufficient reliable plantar vertices'}
   for frame_index,f in enumerate(t/dur):
    ang=pose_angles(f)*gain
@@ -303,6 +317,7 @@ def run(src,out,texture=False,save_poses=True):
    sv+=tr;qs.append(q);ts.append(tr);r=np.linalg.norm(sv[edges[:,0]]-sv[edges[:,1]],axis=1)[mask]/rest[mask];rat.append(np.quantile(r,.99));moved.append(np.max(np.linalg.norm(sv-v,axis=1)))
    floor.append(float(sv[:,1].min()));sole_traces.append([sv[sole].mean(0) if len(sole) else [np.nan]*3 for sole in soles])
    if abs(f-.5)<1e-5 or abs(f-7/30)<1e-5 or f==1:frames[clip+('_mid' if abs(f-.5)<1e-5 else '_peak' if f<1 else '_end')]=sv
+   if save_poses and clip=='walk' and os.getenv('FORGE_WALK_VISUAL_QA')=='1' and frame_index%3==0:frames[f'walk_frame_{frame_index:02d}']=sv.copy()
   qs=np.asarray(qs,dtype='f4');ti=add(t.astype('f4'),'SCALAR',5126);sam=[];channels=[]
   for j in range(26):
    if np.max(np.abs(qs[:,j]-identity[j]))<1e-7:continue
