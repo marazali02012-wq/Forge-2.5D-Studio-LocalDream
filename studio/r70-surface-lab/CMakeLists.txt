@@ -23,5 +23,6 @@ foreach(t forge_pmp forge_mc33)
     --no-entry -sMODULARIZE=1 -sENVIRONMENT=web,worker,node
     -sSINGLE_FILE=1 -sALLOW_MEMORY_GROWTH=1
     -sINITIAL_MEMORY=33554432 -sMAXIMUM_MEMORY=268435456
+    "-sEXPORTED_RUNTIME_METHODS=['HEAPF32','HEAPU32']"
     "-sEXPORTED_FUNCTIONS=['_malloc','_free']")
 endforeach()
