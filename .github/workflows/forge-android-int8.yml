@@ -19,7 +19,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - uses: android-actions/setup-android@v3
+      - name: Use preinstalled Android SDK 35
+        run: |
+          test -n "$ANDROID_HOME"
+          SDK=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | sort -V | tail -1)
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
+            yes | "$SDK" --licenses >/dev/null || true
+            "$SDK" 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
       - name: Prepare offline APK assets
         run: |
           bash experiments/android-int8/fetch_assets.sh android-probe-data
