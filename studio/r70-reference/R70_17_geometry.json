@@ -1,0 +1,20 @@
+[
+  {
+    "style": "normal",
+    "parts": 10,
+    "triangles": 42877,
+    "bytes": 1051612
+  },
+  {
+    "style": "lean",
+    "parts": 10,
+    "triangles": 42877,
+    "bytes": 1051612
+  },
+  {
+    "style": "heavy",
+    "parts": 10,
+    "triangles": 42877,
+    "bytes": 1051616
+  }
+]
