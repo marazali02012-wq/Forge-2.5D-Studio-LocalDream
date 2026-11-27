@@ -1,0 +1,36 @@
+name: Forge R70 vendor acquisition
+on:
+  push:
+    branches: [forge-r70-anatomy]
+    paths: ['.github/workflows/forge-r70-vendor.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bash studio/r70-reference/acquire_vendor.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forge-offline-vendor
+          path: |
+            vendor/manifold/runtime/
+            vendor/watlas/watlas.wasm
+            vendor/kaykit/packages/
+            vendor/quaternius/packages/
+            vendor/ACQUIRED_SHA256.txt
+          if-no-files-found: error
+      - name: Save verified vendor assets to R70 branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vendor/manifold/runtime vendor/watlas/watlas.wasm vendor/kaykit/packages vendor/quaternius/packages vendor/ACQUIRED_SHA256.txt
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Vendor verified WASM runtimes and CC0 animation archives"
+          git push origin HEAD:forge-r70-anatomy
