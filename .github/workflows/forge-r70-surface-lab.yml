@@ -33,11 +33,11 @@ jobs:
           emcmake cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel 2
           node smoke.cjs build | tee build/smoke.json
-          cp deps/pmp/LICENSE* build/ || true
+          cp deps/pmp/LICENSE build/PMP-LICENSE.txt || cp deps/pmp/LICENSE.txt build/PMP-LICENSE.txt
           cp deps/mc33/LICENSE.txt build/MC33-LICENSE.txt
       - name: Install offline browser test tools
         run: |
-          npm install --no-save --ignore-scripts playwright@1.56.1
+          npm install --no-save --ignore-scripts playwright@1.56.1 gltf-validator@2.0.0-dev.3.10
           npx playwright install chromium
       - name: Test real R70.17 garment geometry and capture views
         run: node studio/r70-surface-lab/garment_visual.mjs
@@ -50,3 +50,4 @@ jobs:
             studio/r70-surface-lab/build/smoke.json
             studio/r70-surface-lab/build/*LICENSE*
             studio/r70-surface-lab/build/visual/
+            studio/r70-surface-lab/build/Forge_R70_18_Surface_Preview.html
