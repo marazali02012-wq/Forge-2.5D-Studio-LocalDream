@@ -17,7 +17,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-save --ignore-scripts playwright@1.56.1
       - run: npx playwright install chromium
-      - run: node studio/r70-reference/build_test_r70_14.mjs
+      - run: node studio/r70-reference/build_test_r70_15.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: Forge-R70-15
