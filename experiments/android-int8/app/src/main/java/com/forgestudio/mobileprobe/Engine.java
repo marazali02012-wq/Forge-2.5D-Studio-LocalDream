@@ -49,6 +49,9 @@ public final class Engine {
     if(offset%(4096*8)==0)log.accept("3D alan: "+(100*offset/count)+"%");
    }
    mesh=extract(density,n,radius,iso);
+   int beforeCleanup=mesh.f.size();
+   mesh=clean(mesh,2*radius/(n-1));
+   log.accept("Yuzey temizleme: "+beforeCleanup+" -> "+mesh.f.size()+" ucgen");
    if(mesh.f.size()<100||mesh.v.size()<30)throw new IOException("Yeterli 3D yuzey bulunamadi");
    for(int a=0;a<mesh.v.size();a+=4096){int len=Math.min(4096,mesh.v.size()-a);float[] points=new float[len*3];for(int i=0;i<len;i++)System.arraycopy(mesh.v.get(a+i),0,points,i*3,3);float[] c=decode(env,s,p,points,"color");if(c.length!=len*3)throw new IOException("Renk boyutu");for(int i=0;i<len;i++){float[] rgb=Arrays.copyOfRange(c,i*3,i*3+3);for(int j=0;j<3;j++){if(!Float.isFinite(rgb[j]))throw new IOException("Renk NaN");rgb[j]=Math.max(0,Math.min(1,rgb[j]));}mesh.c.add(rgb);}}
   }
@@ -71,6 +74,42 @@ public final class Engine {
   public final ArrayList<float[]> v=new ArrayList<>(),c=new ArrayList<>();
   public final ArrayList<int[]> f=new ArrayList<>();
   public long elapsedMs,hwmMiB;
+ }
+ // Remove only very small disconnected pieces; preserve substantial separate geometry.
+ static int root(int[] p,int a){while(p[a]!=a){p[a]=p[p[a]];a=p[a];}return a;}
+ static void union(int[] p,int a,int b){a=root(p,a);b=root(p,b);if(a!=b)p[b]=a;}
+ static long edgeKey(int a,int b){return ((long)Math.min(a,b)<<32)|(Math.max(a,b)&0xffffffffL);}
+ public static Mesh clean(Mesh source,float cell){
+  int nv=source.v.size();int[] parent=new int[nv],counts=new int[nv],map=new int[nv];Arrays.fill(map,-1);
+  for(int i=0;i<nv;i++)parent[i]=i;
+  for(int[] f:source.f){union(parent,f[0],f[1]);union(parent,f[1],f[2]);}
+  int largest=0;for(int[] f:source.f){int r=root(parent,f[0]);largest=Math.max(largest,++counts[r]);}
+  int minimum=Math.max(8,(int)Math.ceil(largest*.002));Mesh m=new Mesh();
+  for(int[] f:source.f){if(counts[root(parent,f[0])]<minimum)continue;
+   int[] q=new int[3];for(int k=0;k<3;k++){int i=f[k];if(map[i]<0){map[i]=m.v.size();m.v.add(source.v.get(i).clone());if(source.c.size()==nv)m.c.add(source.c.get(i).clone());}q[k]=map[i];}m.f.add(q);
+  }
+  int n=m.v.size();if(n==0)return m;
+  ArrayList<HashSet<Integer>> neighbors=new ArrayList<>(n);for(int i=0;i<n;i++)neighbors.add(new HashSet<>());
+  HashMap<Long,Integer> edges=new HashMap<>();for(int[] f:m.f)for(int k=0;k<3;k++){int a=f[k],b=f[(k+1)%3];neighbors.get(a).add(b);neighbors.get(b).add(a);long key=edgeKey(a,b);edges.put(key,edges.getOrDefault(key,0)+1);}
+  boolean[] fixed=new boolean[n];for(Map.Entry<Long,Integer> e:edges.entrySet())if(e.getValue()!=2){fixed[(int)(e.getKey()>>>32)]=true;fixed[(int)(long)e.getKey()]=true;}
+  float[][] original=m.v.toArray(new float[0][]),cur=new float[n][3];for(int i=0;i<n;i++)cur[i]=original[i].clone();
+  // Bounded Taubin smoothing: opposing passes limit shrinkage; freeze open/nonmanifold edges.
+  for(float factor:new float[]{.42f,-.45f,.42f,-.45f,.42f,-.45f}){
+   float[][] next=new float[n][3];
+   for(int i=0;i<n;i++){float[] p=cur[i];next[i]=p.clone();if(fixed[i]||neighbors.get(i).isEmpty())continue;
+    float[] avg=new float[3];for(int j:neighbors.get(i))for(int k=0;k<3;k++)avg[k]+=cur[j][k];
+    for(int k=0;k<3;k++)next[i][k]+=factor*(avg[k]/neighbors.get(i).size()-p[k]);
+    float[] d=sub(next[i],original[i]);float l=(float)Math.sqrt(dot(d,d)),limit=.45f*cell;if(l>limit)for(int k=0;k<3;k++)next[i][k]=original[i][k]+d[k]*limit/l;
+   }cur=next;
+  }
+  // Reject smoothing if any face flips or collapses. Cleanup remains valid.
+  boolean safe=true;for(int[] f:m.f){float[] a=cross(sub(original[f[1]],original[f[0]]),sub(original[f[2]],original[f[0]]));float[] b=cross(sub(cur[f[1]],cur[f[0]]),sub(cur[f[2]],cur[f[0]]));if(dot(a,b)<=0||dot(b,b)<1e-24f){safe=false;break;}}
+  if(safe)for(int i=0;i<n;i++)m.v.set(i,cur[i]);
+  return m;
+ }
+ public static float[][] normals(Mesh m){
+  float[][] result=new float[m.v.size()][3];for(int[] f:m.f){float[] a=cross(sub(m.v.get(f[1]),m.v.get(f[0])),sub(m.v.get(f[2]),m.v.get(f[0])));for(int i:f)for(int j=0;j<3;j++)result[i][j]+=a[j];}
+  for(float[] a:result){float l=(float)Math.sqrt(dot(a,a));for(int j=0;j<3;j++)a[j]=l>1e-12?a[j]/l:j==1?1:0;}return result;
  }
  static float[] sub(float[] a,float[] b){return new float[]{a[0]-b[0],a[1]-b[1],a[2]-b[2]};}
  static float[] cross(float[] a,float[] b){return new float[]{a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]};}
@@ -101,7 +140,7 @@ public final class Engine {
  }
  public static void saveGlb(Mesh m,File file)throws IOException{
   int nv=m.v.size(),nf=m.f.size(),len=nv*36+nf*12;ByteBuffer b=ByteBuffer.allocate(len).order(ByteOrder.LITTLE_ENDIAN);float[] min={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE},max={-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};
-  float[][] normal=new float[nv][3];for(int[] f:m.f){float[] a=cross(sub(m.v.get(f[1]),m.v.get(f[0])),sub(m.v.get(f[2]),m.v.get(f[0])));for(int i:f)for(int j=0;j<3;j++)normal[i][j]+=a[j];}
+  float[][] normal=normals(m);
   for(float[] p:m.v)for(int j=0;j<3;j++){min[j]=Math.min(min[j],p[j]);max[j]=Math.max(max[j],p[j]);b.putFloat(p[j]);}
   for(float[] a:normal){float l=(float)Math.sqrt(dot(a,a));for(int j=0;j<3;j++)b.putFloat(l>1e-12?a[j]/l:j==1?1:0);}
   for(float[] a:m.c)for(float x:a)b.putFloat(x);
