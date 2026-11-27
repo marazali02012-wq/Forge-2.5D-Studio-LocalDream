@@ -1,0 +1,46 @@
+{
+  "layout": {
+    "canvas": [
+      800,
+      315
+    ],
+    "overflow": false,
+    "header": 44
+  },
+  "initial": {
+    "triangles": 20316,
+    "expected": 20316,
+    "revision": "180",
+    "canvas": [
+      800,
+      315
+    ],
+    "calls": 1
+  },
+  "anatomy": {
+    "triangles": 27036,
+    "rendered": 27036,
+    "parts": [
+      "human.body",
+      "human.eye.L",
+      "human.eye.R"
+    ],
+    "bytes": 650184
+  },
+  "regression": {
+    "volume": 1.5,
+    "triangles": 28,
+    "expected": 28,
+    "glbBytes": 2456
+  },
+  "errors": [],
+  "dialogs": [
+    "Mevcut model anatomik taslakla değişsin mi?"
+  ],
+  "requests": [],
+  "offline": true,
+  "viewport": [
+    800,
+    360
+  ]
+}
