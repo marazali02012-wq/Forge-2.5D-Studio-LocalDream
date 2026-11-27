@@ -1,0 +1,50 @@
+name: R70.29 private image to GLB service end-to-end
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['studio/cloud-ai/private_api.py','studio/cloud-ai/connected_patch.mjs','studio/cloud-ai/connected_qa.mjs','.github/workflows/forge-r70-connected.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch upstream and install CPU-only dependencies
+        run: |
+          git init /tmp/triposr
+          git -C /tmp/triposr fetch --depth 1 https://github.com/VAST-AI-Research/TripoSR.git 107cefdc244c39106fa830359024f6a2f1c78871
+          git -C /tmp/triposr checkout FETCH_HEAD
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 omegaconf==2.3.0 Pillow==10.4.0 einops==0.7.0 transformers==4.46.3 tokenizers==0.20.3 trimesh==4.0.5 huggingface-hub==0.26.5 'rembg[cpu]==2.0.61' opencv-python-headless==4.10.0.84 onnxruntime==1.20.1 numba==0.60.0 imageio==2.36.0 imageio-ffmpeg==0.5.1
+          # Only substitute the CPU marching cubes implementation, not model inference.
+          printf 'def marching_cubes(*args, **kwargs):\n    raise RuntimeError("CPU backend not installed")\n' > /tmp/triposr/torchmcubes.py
+      - run: pip check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts playwright@1.56.1 gltf-validator@2.0.0-dev.3.10
+      - run: npx playwright install chromium
+      - run: node studio/cloud-ai/ai_import_patch.mjs && node studio/cloud-ai/connected_patch.mjs
+      - name: Real authenticated browser upload and CPU reconstruction
+        run: |
+          export FORGE_API_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$FORGE_API_TOKEN"
+          export FORGE_ALLOWED_ORIGINS=http://127.0.0.1:8766
+          export PYTHONPATH=/tmp/triposr
+          python studio/cloud-ai/private_api.py > /tmp/forge-api.log 2>&1 &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8765/health && break; sleep 1; done
+          node studio/cloud-ai/connected_qa.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r70-29-connected
+          path: |
+            Forge_R70_29_AI_Connected.html
+            r70-29-qa/
