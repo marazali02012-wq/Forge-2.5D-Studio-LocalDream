@@ -2,7 +2,7 @@ name: Forge independent TripoSR CPU inference
 on:
   push:
     branches: [forge-r70-surface-lab]
-    paths: ['studio/cloud-ai/cpu_probe.py','.github/workflows/forge-cloud-cpu.yml']
+    paths: ['studio/cloud-ai/cpu_probe.py','studio/cloud-ai/lod_qa.py','.github/workflows/forge-cloud-cpu.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,6 +31,11 @@ jobs:
         run: FORGE_IMAGE=/tmp/triposr/examples/robot.png FORGE_OUTPUT=cloud-character-qa PYTHONPATH=/tmp/triposr timeout 600 python studio/cloud-ai/cpu_probe.py
       - name: Higher resolution robot and safe surface relaxation
         run: FORGE_RESOLUTION=192 FORGE_IMAGE=/tmp/triposr/examples/robot.png FORGE_OUTPUT=cloud-quality-qa PYTHONPATH=/tmp/triposr timeout 600 python studio/cloud-ai/cpu_probe.py
+      - name: Compare bounded mobile mesh reduction candidates
+        run: |
+          pip install vtk==9.6.2
+          python studio/cloud-ai/lod_qa.py cloud-character-qa/generated.glb cloud-lod-qa/robot128
+          python studio/cloud-ai/lod_qa.py cloud-quality-qa/generated.glb cloud-lod-qa/robot192
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -39,3 +44,4 @@ jobs:
             cloud-cpu-qa/
             cloud-character-qa/
             cloud-quality-qa/
+            cloud-lod-qa/
