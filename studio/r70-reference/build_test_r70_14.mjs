@@ -29,5 +29,5 @@ try{
  await page.locator('#threeToggle').click();assert.equal(await page.evaluate(()=>threeEnabled),false);
  assert.deepEqual(errors,[]);assert.deepEqual(dialogs,[]);assert.deepEqual(requests,[]);
  fs.writeFileSync('studio/r70-reference/R70_14_browser.json',JSON.stringify({initial,regression,errors,dialogs,requests,offline:true,viewport:[800,360]},null,2));
- console.log({initial,regression});
+ const views={};for(const name of ['old','three','side','back'])views[name]=fs.readFileSync('studio/r70-reference/R70_14_'+name+'.png').toString('base64');fs.writeFileSync('studio/r70-reference/R70_14_visual.json',JSON.stringify(views));console.log({initial,regression});
 }finally{await browser.close()}
