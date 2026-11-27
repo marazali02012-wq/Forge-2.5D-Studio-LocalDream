@@ -10,7 +10,7 @@ for name in ['robot','knight']:
  results[name]={'source_sha256':hashlib.sha256(src.read_bytes()).hexdigest()}
  for mode in ['baseline','candidate']:
   dest=out/name/mode
-  env=dict(os.environ,FORGE_CONTACT_QA='1' if mode=='candidate' else '0')
+  env=dict(os.environ,FORGE_CONTACT_QA='1' if mode=='candidate' else '0',FORGE_WALK_VISUAL_QA='1')
   subprocess.run([sys.executable,str(root),str(src),str(dest),'--texture'],env=env,check=True)
   report=json.loads((dest/'report.json').read_text())
   assert all(c['accepted'] for c in report['clips'].values())
@@ -29,16 +29,36 @@ for name in ['robot','knight']:
     d.line((i*265+5,y0,(i+1)*265-5,y0),fill=(130,130,130))
     d.text((i*265+7,j*175+2),key+' '+('front' if j==0 else 'side'),fill='white')
   canvas.save(dest/'walk_visual.png')
+  # Whole-cycle front/side audit at 11 original keyframes.
+  # Fixed scale and floor, no per-pose recentering or visual substitution.
+  keys=[f'walk_frame_{i:02d}' for i in range(0,31,3)]
+  sheet=Image.new('RGB',(110*len(keys),340),(31,38,49));draw=ImageDraw.Draw(sheet)
+  for i,key in enumerate(keys):
+   a=poses[key]
+   for j,axis in enumerate([0,2]):
+    x0=55+i*110;y0=145+j*170;s=110/h
+    p=np.stack([a[:,axis]*s+x0,y0-a[:,1]*s],axis=1)
+    depth=a[:,2 if axis==0 else 0]
+    for fi in np.argsort(depth[faces].mean(1)):
+     f=faces[fi];draw.polygon([tuple(p[k]) for k in f],fill=tuple(np.rint(rgb[f].mean(0)).astype(int)))
+    draw.line((i*110+2,y0,(i+1)*110-2,y0),fill=(150,150,150))
+    draw.text((i*110+3,j*170+4),str(i*10)+'% '+('front' if j==0 else 'side'),fill='white')
+  sheet.save(dest/'walk_cycle.png')
   (dest/'poses.npz').unlink()
  results[name]['comparison']=results[name]['candidate']['walk'].get('contact_r7035')
  c=results[name]['comparison']
  assert c is not None
  if 'candidates' in c:
-  assert len(c['candidates'])==3,'Missing experimental IK candidate'
+  assert len(c['candidates'])==6,'Missing experimental IK candidates'
   for m in [c['baseline']]+c['candidates']:
    assert m['samples']==121
    assert all(math.isfinite(m[k]) and m[k]>=0 for k in ('drift','tilt','gap','floor','strain','motion'))
-  assert c['selected'] in range(4)
+  assert c['selected'] in range(7)
+  assert c['previous_selected'] in range(4)
+  if c['selected']>=4:
+   prev=([c['baseline']]+c['candidates'])[c['previous_selected']]
+   new=c['candidates'][c['selected']-1]
+   assert new['motion']>=.95*prev['motion'] and new['gap']<.85*prev['gap']
   if c['selected']:
    actual=c['candidates'][c['selected']-1]
    assert actual['strain']<1.5
