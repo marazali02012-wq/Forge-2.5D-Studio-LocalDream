@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 pillow==10.4.0
+      - run: pip install numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 pillow==10.4.0 networkx==3.4.2
       - run: OPENBLAS_NUM_THREADS=2 python verification/r70_35/compare_contact.py
       - uses: actions/setup-node@v4
         with:
