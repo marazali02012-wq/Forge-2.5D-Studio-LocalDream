@@ -2,7 +2,7 @@ name: Forge Cloud AI anonymous GPU probe
 on:
   push:
     branches: [forge-r70-surface-lab]
-    paths: ['studio/cloud-ai/**','.github/workflows/forge-cloud-probe.yml']
+    paths: ['studio/cloud-ai/probe.py','.github/workflows/forge-cloud-probe.yml']
   workflow_dispatch:
 permissions:
   contents: read
