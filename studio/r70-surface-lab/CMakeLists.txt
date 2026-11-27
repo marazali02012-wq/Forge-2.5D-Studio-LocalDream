@@ -1,0 +1,27 @@
+cmake_minimum_required(VERSION 3.16.3)
+project(forge_surface_lab LANGUAGES C CXX)
+if(NOT EMSCRIPTEN)
+  message(FATAL_ERROR "Use emcmake")
+endif()
+set(PMP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(PMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PMP_BUILD_VIEWERS OFF CACHE BOOL "" FORCE)
+set(PMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(PMP_STRICT_COMPILATION OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+add_subdirectory(deps/pmp pmp-build)
+add_executable(forge_pmp pmp_bridge.cpp)
+target_link_libraries(forge_pmp PRIVATE pmp)
+target_compile_features(forge_pmp PRIVATE cxx_std_20)
+target_compile_options(forge_pmp PRIVATE -fexceptions)
+target_link_options(forge_pmp PRIVATE -fexceptions)
+add_executable(forge_mc33 mc33_bridge.c)
+target_include_directories(forge_mc33 PRIVATE deps/mc33)
+foreach(t forge_pmp forge_mc33)
+  set_target_properties(${t} PROPERTIES SUFFIX ".cjs")
+  target_link_options(${t} PRIVATE
+    --no-entry -sMODULARIZE=1 -sENVIRONMENT=web,worker,node
+    -sSINGLE_FILE=1 -sALLOW_MEMORY_GROWTH=1
+    -sINITIAL_MEMORY=33554432 -sMAXIMUM_MEMORY=268435456
+    "-sEXPORTED_FUNCTIONS=['_malloc','_free']")
+endforeach()

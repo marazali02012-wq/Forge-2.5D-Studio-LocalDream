@@ -1,0 +1,30 @@
+const assert=require('node:assert/strict');
+const path=require('node:path');
+(async()=>{
+ const root=path.resolve(process.argv[2]||'build');
+ const p=await require(path.join(root,'forge_pmp.cjs'))();
+ const a=new Float32Array([-1,-1,0,1,-1,0,1,1,0,-1,1,0,0,0,0.3]);
+ const b=new Uint32Array([0,1,4,1,2,4,2,3,4,3,0,4]);
+ const ap=p._malloc(a.byteLength),bp=p._malloc(b.byteLength);
+ p.HEAPF32.set(a,ap/4);p.HEAPU32.set(b,bp/4);
+ assert.equal(p._forge_smooth(ap,5,bp,12,1,0.1),0);
+ const out=p.HEAPF32.slice(ap/4,ap/4+15);
+ assert.deepEqual(out.slice(0,12),a.slice(0,12));
+ assert.ok(out[14]<a[14]&&a[14]-out[14]<=0.100001);
+ p._free(ap);p._free(bp);
+ const m=await require(path.join(root,'forge_mc33.cjs'))();
+ const n=24,d=new Float32Array(n*n*n);
+ for(let z=0,k=0;z<n;z++)for(let y=0;y<n;y++)for(let x=0;x<n;x++,k++)d[k]=(x-11.5)**2+(y-11.5)**2+(z-11.5)**2-64;
+ const dp=m._malloc(d.byteLength);m.HEAPF32.set(d,dp/4);
+ assert.equal(m._forge_mc_extract(dp,n,n,n,0),0);
+ const nv=m._forge_mc_vertices(),nt=m._forge_mc_triangles();
+ assert.ok(nv>0&&nt>0);
+ const v=m.HEAPF32.slice(m._forge_mc_positions()/4,m._forge_mc_positions()/4+3*nv);
+ const t=m.HEAPU32.slice(m._forge_mc_indices()/4,m._forge_mc_indices()/4+3*nt);
+ assert.ok(v.every(Number.isFinite));assert.ok(t.every(i=>i<nv));
+ const edges=new Map();
+ for(let i=0;i<t.length;i+=3){const q=t.slice(i,i+3);assert.equal(new Set(q).size,3);for(let j=0;j<3;j++){const a=q[j],b=q[(j+1)%3],key=a<b?a+':'+b:b+':'+a;edges.set(key,(edges.get(key)||0)+1)}}
+ assert.ok([...edges.values()].every(x=>x===2),'sphere not closed');
+ m._forge_mc_clear();m._free(dp);
+ console.log(JSON.stringify({pmp:{borderLocked:true,displacement:a[14]-out[14]},mc33:{vertices:nv,triangles:nt,closedEdges:true}},null,2));
+})().catch(e=>{console.error(e);process.exitCode=1});

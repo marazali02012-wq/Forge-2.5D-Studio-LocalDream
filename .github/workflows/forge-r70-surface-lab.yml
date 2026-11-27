@@ -1,0 +1,45 @@
+name: R70.18 surface WASM experiment
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          cd "$RUNNER_TEMP/emsdk"
+          ./emsdk install 4.0.10
+          ./emsdk activate 4.0.10
+      - name: Build real pinned dependencies and test
+        working-directory: studio/r70-surface-lab
+        run: |
+          set -euo pipefail
+          mkdir -p deps
+          git init deps/pmp
+          git -C deps/pmp fetch --depth 1 https://github.com/pmp-library/pmp-library.git 6221d8f531a9b32893a4f4079c96702471334503
+          git -C deps/pmp checkout --detach FETCH_HEAD
+          git -C deps/pmp submodule update --init --recursive
+          git init deps/mc33
+          git -C deps/mc33 fetch --depth 1 https://github.com/dvega68/MC33_c_header-only.git eef8f8f4d70527af74b988869e34f887ef9ed7ba
+          git -C deps/mc33 checkout --detach FETCH_HEAD
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          emcmake cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+          node smoke.cjs build | tee build/smoke.json
+          cp deps/pmp/LICENSE* build/ || true
+          cp deps/mc33/LICENSE.txt build/MC33-LICENSE.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: r70-surface-wasm
+          path: |
+            studio/r70-surface-lab/build/forge_*.cjs
+            studio/r70-surface-lab/build/smoke.json
+            studio/r70-surface-lab/build/*LICENSE*
