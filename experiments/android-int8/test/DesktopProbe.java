@@ -12,6 +12,6 @@ public class DesktopProbe{
   Engine.Mesh m=Engine.run(new File(root,"models/triposr-encoder-int8.onnx"),new File(root,"models/triposr-decoder-fp32.onnx"),input,Float.parseFloat(args[2]),Float.parseFloat(args[3]),64,System.out::println);
   Engine.saveGlb(m,new File(out,"java-robot.glb"));
   for(int i=0;i<3;i++){int[] pixels=Preview.pixels(m,i);BufferedImage b=new BufferedImage(Preview.SIZE,Preview.SIZE,BufferedImage.TYPE_INT_RGB);b.setRGB(0,0,Preview.SIZE,Preview.SIZE,pixels,0,Preview.SIZE);ImageIO.write(b,"png",new File(out,"android-preview-"+i+".png"));}
-  try(PrintWriter p=new PrintWriter(new File(out,"java-report.json"))){p.printf(Locale.US,"{\"vertices\":%d,\"triangles\":%d,\"elapsed_ms\":%d,\"hwm_mib\":%d,\"removed_faces\":%d,\"smoothing_weight\":%f}%n",m.v.size(),m.f.size(),m.elapsedMs,m.hwmMiB,m.removedFaces,m.smoothingWeight);}
+  try(PrintWriter p=new PrintWriter(new File(out,"java-report.json"))){p.printf(Locale.US,"{\"vertices\":%d,\"triangles\":%d,\"elapsed_ms\":%d,\"hwm_mib\":%d,\"removed_faces\":%d,\"smoothing_weight\":%f,\"surface\":\"%s\"}%n",m.v.size(),m.f.size(),m.elapsedMs,m.hwmMiB,m.removedFaces,m.smoothingWeight,m.surface);}
  }
 }
