@@ -1,0 +1,18 @@
+{
+  "data": {
+    "triangles": 96,
+    "volume": 1.3942617093982435,
+    "webgl": true,
+    "canvas": [
+      530,
+      280
+    ]
+  },
+  "errors": [],
+  "dialogs": [],
+  "offline": true,
+  "viewport": [
+    800,
+    360
+  ]
+}
