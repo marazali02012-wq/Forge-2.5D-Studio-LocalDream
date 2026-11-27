@@ -53,10 +53,10 @@ try{
  for(const name of [...Object.keys(names),...Object.keys(names).map(x=>'m2m_'+x)]){
   for(const fraction of [.1,.25,.45,.65,.85,.98]){
    const frame=await page.evaluate(([name,t])=>window.forgeFrame(name,t,0),[name,fraction]);
-   assert.ok(frame.finite&&frame.vertices>0&&frame.maxRadiusOverHeight<3,'Exploding/nonfinite mesh '+name);
+   assert.ok(frame.finite&&frame.vertices>0&&frame.maxRadiusOverHeight<3,'Exploding/nonfinite mesh '+name);assert.equal(frame.clippedVertices,0,'Visual clipping '+name);
    if(name.startsWith('m2m_'))assert.ok(Math.abs(frame.groundOffset)<.012,'Ground residual '+name+' '+frame.groundOffset);
    await page.screenshot({path:path.join(out,name+'-'+fraction+'-front.png')});
-   if(fraction===.65){await page.evaluate(name=>window.forgeFrame(name,.65,Math.PI/2),name);await page.screenshot({path:path.join(out,name+'-side.png')})}
+   if(fraction===.65){const side=await page.evaluate(name=>window.forgeFrame(name,.65,Math.PI/2),name);assert.equal(side.clippedVertices,0,'Side clipping '+name);await page.screenshot({path:path.join(out,name+'-side.png')})}
    report.frames.push({name,fraction,...frame});
   }
  }

@@ -143,10 +143,16 @@ window.forgeFrame=(name,fraction,angle=0)=>{
  mixer.stopAllAction();restore(rest.sk,rest.transforms);mixer.setTime(0);
  const action=mixer.clipAction(clip);action.reset().setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();mixer.setTime(clip.duration*fraction);
  model.updateMatrixWorld(true);
- let minY=Infinity,maxY=-Infinity,maxRadius=0,finite=true,n=0;
+ let minY=Infinity,maxY=-Infinity,maxRadius=0,finite=true,n=0;const frameBox=new THREE.Box3();
  const v=new THREE.Vector3();
- for(const m of meshes){const p=m.geometry.attributes.position;for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);finite=finite&&Number.isFinite(v.x+v.y+v.z);minY=Math.min(minY,v.y);maxY=Math.max(maxY,v.y);maxRadius=Math.max(maxRadius,v.distanceTo(rest.center));n++}}
- const c=rest.center,h=rest.h;camera.position.set(c.x+Math.sin(angle)*h*1.95,c.y+h*.12,c.z+Math.cos(angle)*h*1.95);camera.lookAt(c);renderer.render(scene,camera);
+ for(const m of meshes){const p=m.geometry.attributes.position;for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);finite=finite&&Number.isFinite(v.x+v.y+v.z);minY=Math.min(minY,v.y);maxY=Math.max(maxY,v.y);maxRadius=Math.max(maxRadius,v.distanceTo(rest.center));frameBox.expandByPoint(v);n++}}
+ const c=frameBox.getCenter(new THREE.Vector3()),h=rest.h;
+ // Follow the actual animated bounds, including a fallen body. Test camera only,
+ // not a change to model scale or animation.
+ const size=frameBox.getSize(new THREE.Vector3()),distance=Math.max(h*1.95,size.length()*1.1);
+ camera.position.set(c.x+Math.sin(angle)*distance,c.y+h*.38,c.z+Math.cos(angle)*distance);camera.lookAt(c);camera.updateMatrixWorld(true);
+ let clipped=0;for(const m of meshes){const a=m.geometry.attributes.position;for(let i=0;i<a.count;i++){v.fromBufferAttribute(a,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld).project(camera);if(Math.max(Math.abs(v.x),Math.abs(v.y),Math.abs(v.z))>1)clipped++}}
+ renderer.render(scene,camera);
  document.querySelector('#label').textContent=name+' '+Math.round(fraction*100)+'%';
- return {finite,vertices:n,minY,maxY,maxRadiusOverHeight:maxRadius/h,groundOffset:(minY-rest.box.min.y)/h};
+ return {finite,vertices:n,minY,maxY,maxRadiusOverHeight:maxRadius/h,groundOffset:(minY-rest.box.min.y)/h,clippedVertices:clipped};
 };
