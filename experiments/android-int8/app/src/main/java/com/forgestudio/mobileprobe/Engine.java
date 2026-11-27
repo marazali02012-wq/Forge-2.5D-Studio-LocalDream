@@ -51,7 +51,7 @@ public final class Engine {
    mesh=extract(density,n,radius,iso);
    int beforeCleanup=mesh.f.size();
    mesh=clean(mesh,2*radius/(n-1));
-   log.accept("Yuzey temizleme: "+beforeCleanup+" -> "+mesh.f.size()+" ucgen");
+   log.accept("Yuzey temizleme: "+beforeCleanup+" -> "+mesh.f.size()+" ucgen; yumusatma "+mesh.smoothingWeight);
    if(mesh.f.size()<100||mesh.v.size()<30)throw new IOException("Yeterli 3D yuzey bulunamadi");
    for(int a=0;a<mesh.v.size();a+=4096){int len=Math.min(4096,mesh.v.size()-a);float[] points=new float[len*3];for(int i=0;i<len;i++)System.arraycopy(mesh.v.get(a+i),0,points,i*3,3);float[] c=decode(env,s,p,points,"color");if(c.length!=len*3)throw new IOException("Renk boyutu");for(int i=0;i<len;i++){float[] rgb=Arrays.copyOfRange(c,i*3,i*3+3);for(int j=0;j<3;j++){if(!Float.isFinite(rgb[j]))throw new IOException("Renk NaN");rgb[j]=Math.max(0,Math.min(1,rgb[j]));}mesh.c.add(rgb);}}
   }
@@ -73,7 +73,7 @@ public final class Engine {
  public static final class Mesh{
   public final ArrayList<float[]> v=new ArrayList<>(),c=new ArrayList<>();
   public final ArrayList<int[]> f=new ArrayList<>();
-  public long elapsedMs,hwmMiB;
+  public long elapsedMs,hwmMiB; public float smoothingWeight; public int removedFaces;
  }
  // Remove only very small disconnected pieces; preserve substantial separate geometry.
  static int root(int[] p,int a){while(p[a]!=a){p[a]=p[p[a]];a=p[a];}return a;}
@@ -88,7 +88,7 @@ public final class Engine {
   for(int[] f:source.f){if(counts[root(parent,f[0])]<minimum)continue;
    int[] q=new int[3];for(int k=0;k<3;k++){int i=f[k];if(map[i]<0){map[i]=m.v.size();m.v.add(source.v.get(i).clone());if(source.c.size()==nv)m.c.add(source.c.get(i).clone());}q[k]=map[i];}m.f.add(q);
   }
-  int n=m.v.size();if(n==0)return m;
+  m.removedFaces=source.f.size()-m.f.size();int n=m.v.size();if(n==0)return m;
   ArrayList<HashSet<Integer>> neighbors=new ArrayList<>(n);for(int i=0;i<n;i++)neighbors.add(new HashSet<>());
   HashMap<Long,Integer> edges=new HashMap<>();for(int[] f:m.f)for(int k=0;k<3;k++){int a=f[k],b=f[(k+1)%3];neighbors.get(a).add(b);neighbors.get(b).add(a);long key=edgeKey(a,b);edges.put(key,edges.getOrDefault(key,0)+1);}
   boolean[] fixed=new boolean[n];for(Map.Entry<Long,Integer> e:edges.entrySet())if(e.getValue()!=2){fixed[(int)(e.getKey()>>>32)]=true;fixed[(int)(long)e.getKey()]=true;}
@@ -103,8 +103,11 @@ public final class Engine {
    }cur=next;
   }
   // Reject smoothing if any face flips or collapses. Cleanup remains valid.
-  boolean safe=true;for(int[] f:m.f){float[] a=cross(sub(original[f[1]],original[f[0]]),sub(original[f[2]],original[f[0]]));float[] b=cross(sub(cur[f[1]],cur[f[0]]),sub(cur[f[2]],cur[f[0]]));if(dot(a,b)<=0||dot(b,b)<1e-24f){safe=false;break;}}
-  if(safe)for(int i=0;i<n;i++)m.v.set(i,cur[i]);
+  for(float w:new float[]{1f,.5f,.25f,.125f,.0625f,.03125f}){
+   float[][] candidate=new float[n][3];for(int i=0;i<n;i++)for(int j=0;j<3;j++)candidate[i][j]=original[i][j]+(cur[i][j]-original[i][j])*w;
+   boolean safe=true;for(int[] f:m.f){float[] a=cross(sub(original[f[1]],original[f[0]]),sub(original[f[2]],original[f[0]]));float[] b=cross(sub(candidate[f[1]],candidate[f[0]]),sub(candidate[f[2]],candidate[f[0]]));if(dot(a,b)<=0||dot(b,b)<1e-24f){safe=false;break;}}
+   if(safe){for(int i=0;i<n;i++)m.v.set(i,candidate[i]);m.smoothingWeight=w;break;}
+  }
   return m;
  }
  public static float[][] normals(Mesh m){
