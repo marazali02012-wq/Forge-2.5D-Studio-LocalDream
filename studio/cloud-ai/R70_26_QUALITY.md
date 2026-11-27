@@ -1,0 +1,4 @@
+# TripoSR R70.26 quality gate
+Confirmed R70.25 clipping test: 60 front frames + 10 side screenshots, no offscreen vertices, zero GLB errors/warnings. Manual review still shows simple materials and open fingers; no blanket visual acceptance.
+Confirmed independent CPU inference (run 46061238157): robot 19,686 vertices / 39,344 triangles, seven connected components, watertight, vertex color, 788124 bytes, 31.06s on test runner. Cube 17,344 vertices / 34,684 triangles. No production cloud deployment.
+R70.26 compares 128 and 192 sampling of the same upstream robot QA-only image, exports explicit normals, and attempts bounded topology-preserving Taubin relaxation. A candidate is rejected if any triangle flips, surface collapses, vertex colors change or displacement exceeds the limit. Actual screenshots must still be inspected. The 192 model is not automatically deployed to mobile. No Arena Forge Pro change.

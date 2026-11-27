@@ -12,7 +12,9 @@ def mc(level,threshold):
     return torch.from_numpy(v[:,::-1].copy()).float(),torch.from_numpy(f.copy()).long()
 iso.marching_cubes=mc
 out=pathlib.Path(os.getenv("FORGE_OUTPUT","cloud-cpu-qa")).resolve();out.mkdir(exist_ok=True)
-report={"device":"cpu","real_generation":False,"model":"stabilityai/TripoSR","resolution":128}
+resolution=int(os.getenv("FORGE_RESOLUTION","128"))
+assert resolution in (128,192,256)
+report={"device":"cpu","real_generation":False,"model":"stabilityai/TripoSR","resolution":resolution}
 try:
     torch.set_num_threads(4)
     im=Image.new("RGB",(384,384),(128,128,128));d=ImageDraw.Draw(im)
@@ -45,11 +47,36 @@ try:
     with torch.inference_mode():
         z=model([im],device="cpu")
         assert torch.isfinite(z).all()
-        mesh=model.extract_mesh(z,True,resolution=128)[0]
+        mesh=model.extract_mesh(z,True,resolution=resolution)[0]
     assert len(mesh.vertices)>100 and len(mesh.faces)>100
     # Correct winding if closed component volume indicates inversion.
     if mesh.is_watertight and mesh.volume<0:mesh.invert()
-    mesh.export(out/"generated.glb")
+    import numpy as np,trimesh
+    # Preserve actual AI geometry and per-vertex colors; test a conservative
+    # surface relaxation with explicit orientation and topology gates.
+    mesh.export(out/"generated.glb",include_normals=True)
+    if resolution>128:
+        from trimesh.smoothing import filter_taubin
+        original=mesh.copy()
+        extent=float(np.linalg.norm(original.extents))
+        base_v=original.vertices.copy()
+        base_n=original.face_normals.copy()
+        base_area=original.area_faces.copy()
+        candidate=original.copy()
+        filter_taubin(candidate,lamb=.35,nu=.37,iterations=4)
+        delta=np.asarray(candidate.vertices)-base_v
+        maxdisp=float(np.max(np.linalg.norm(delta,axis=1))/extent)
+        flips=int(np.count_nonzero(np.einsum("ij,ij->i",base_n,candidate.face_normals)<=0))
+        min_area_ratio=float(np.min(candidate.area_faces/np.maximum(base_area,1e-15)))
+        safe=bool(candidate.is_watertight==original.is_watertight and flips==0 and maxdisp<.003 and min_area_ratio>.15 and np.array_equal(original.faces,candidate.faces) and np.array_equal(original.visual.vertex_colors,candidate.visual.vertex_colors))
+        report["relaxation"]={"accepted":safe,"max_displacement_over_extent":maxdisp,"flipped_faces":flips,"minimum_area_ratio":min_area_ratio}
+        if safe:
+            candidate.export(out/"relaxed.glb",include_normals=True)
+            # Preserve the untouched reconstruction as the reference.
+            check=trimesh.load(out/"relaxed.glb",force="mesh",process=False)
+            assert len(check.faces)==len(original.faces)
+            assert np.isfinite(check.vertex_normals).all() and check.visual.kind=="vertex"
+
     # A real mesh and its color attributes must survive export/import.
     import trimesh,numpy as np
     restored=trimesh.load(out/"generated.glb",force="mesh")
@@ -57,6 +84,7 @@ try:
     assert np.isfinite(restored.vertices).all()
     report["components"]=len(restored.split(only_watertight=False))
     report["vertex_color"]=restored.visual.kind=="vertex"
+    raw=(out/"generated.glb").read_bytes();jlen=struct.unpack_from("<I",raw,12)[0];gltf=json.loads(raw[20:20+jlen]);report["normals_exported"]=all("NORMAL" in pr["attributes"] for me in gltf["meshes"] for pr in me["primitives"]);assert report["normals_exported"]
     assert report["vertex_color"]
     data=(out/"generated.glb").read_bytes()
     assert struct.unpack_from("<4sII",data)==(b"glTF",2,len(data))
