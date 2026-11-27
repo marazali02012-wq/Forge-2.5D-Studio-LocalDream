@@ -1,0 +1,21 @@
+name: Forge R70 meshoptimizer verification
+on:
+  push:
+    branches: [forge-r70-anatomy]
+    paths:
+      - '.github/workflows/forge-r70-meshopt.yml'
+      - 'studio/r70-reference/test_meshoptimizer.mjs'
+      - 'Forge_R70_12_Offline_3D_Modeler.html'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node studio/r70-reference/test_meshoptimizer.mjs
