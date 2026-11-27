@@ -1,0 +1,26 @@
+{
+  "initial": {
+    "triangles": 20316,
+    "expected": 20316,
+    "revision": "180",
+    "canvas": [
+      530,
+      280
+    ],
+    "calls": 1
+  },
+  "regression": {
+    "volume": 1.5,
+    "triangles": 28,
+    "expected": 28,
+    "glbBytes": 2456
+  },
+  "errors": [],
+  "dialogs": [],
+  "requests": [],
+  "offline": true,
+  "viewport": [
+    800,
+    360
+  ]
+}
