@@ -1,0 +1,40 @@
+name: R70.20 MakeHuman source skin transfer
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['studio/r70-surface-lab/mh_skin.mjs','.github/workflows/forge-r70-skin.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  skin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts @gltf-transform/core@4.2.1 gltf-validator@2.0.0-dev.3.10
+      - name: Verify official geometry identity and fetch CC0 weights
+        run: |
+          set -euo pipefail
+          dir=studio/r70-surface-lab/rig-qa
+          mkdir -p "$dir"
+          root=https://raw.githubusercontent.com/makehumancommunity/makehuman/a8bc2d54ff0ac92e78ff71431b1023eda42bf482/makehuman/data
+          curl -fsSL "$root/3dobjs/base.obj" -o "$dir/upstream-base.obj"
+          cmp vendor/makehuman/base.obj "$dir/upstream-base.obj"
+          curl -fsSL "$root/rigs/default.mhskel" -o "$dir/default.mhskel"
+          curl -fsSL "$root/rigs/default_weights.mhw" -o "$dir/default_weights.mhw"
+          test "$(git hash-object "$dir/default.mhskel")" = b02cbecae00143856410d7561adf006d83bf9b3e
+          test "$(git hash-object "$dir/default_weights.mhw")" = 66185806afacf87749be8e5cf6dbf66496b2a6b0
+      - run: node studio/r70-surface-lab/mh_skin.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r70-anatomy-skin
+          path: |
+            studio/r70-surface-lab/rig-qa/*.glb
+            studio/r70-surface-lab/rig-qa/*.json
+            studio/r70-surface-lab/rig-qa/*.mhskel
+            studio/r70-surface-lab/rig-qa/*.mhw
