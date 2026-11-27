@@ -26,7 +26,7 @@ try{
  const io=new NodeIO(),doc=await io.readBinary(new Uint8Array(target)),buffer=doc.getRoot().listBuffers()[0];
  const nodes=new Map(doc.getRoot().listNodes().map(n=>[n.getName(),n]));
  assert.equal(retarget.clips.length,5);
- const report={source:'Mesh2Motion pinned source + CC0 clip library',sourceCommit:'2609e0345371763c4c390f751d79021285da04b1',clips:[],sourceBones:retarget.sourceBones,targetBones:retarget.targetBones};
+ const report={source:'Mesh2Motion calibrated anatomical segment axes + CC0 clip library',sourceCommit:'2609e0345371763c4c390f751d79021285da04b1',clips:[],sourceBones:retarget.sourceBones,targetBones:retarget.targetBones};
  for(const c of retarget.clips){
   const a=doc.createAnimation(c.name);
   for(const t of c.tracks){
@@ -51,7 +51,7 @@ try{
  report.preview=await page.evaluate(b=>window.forgeLoadPreview(b),Buffer.from(bytes).toString('base64'));
  report.frames=[];
  for(const name of [...Object.keys(names),...Object.keys(names).map(x=>'m2m_'+x)]){
-  for(const fraction of [.25,.65]){
+  for(const fraction of [.1,.25,.45,.65,.85,.98]){
    const frame=await page.evaluate(([name,t])=>window.forgeFrame(name,t,0),[name,fraction]);
    assert.ok(frame.finite&&frame.vertices>0&&frame.maxRadiusOverHeight<3,'Exploding/nonfinite mesh '+name);
    await page.screenshot({path:path.join(out,name+'-'+fraction+'-front.png')});

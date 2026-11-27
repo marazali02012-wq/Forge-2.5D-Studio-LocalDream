@@ -6,8 +6,8 @@ import {HumanClipRetargeter} from './deps/mesh2motion/src/retarget/human-retarge
 const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const parse=b=>loader.parseAsync(Uint8Array.from(atob(b),c=>c.charCodeAt(0)).buffer,'');
 const check=(x,m)=>{if(!x)throw Error(m)};
-const srcConfig={pelvis:['pelvis'],spine:['spine_01','spine_03'],head:['neck_01','head'],armL:['upperarm_l','lowerarm_l','hand_l'],armR:['upperarm_r','lowerarm_r','hand_r'],legL:['thigh_l','calf_l','foot_l'],legR:['thigh_r','calf_r','foot_r']};
-const targetNames={pelvis:['hips'],spine:['spine','chest'],head:['neck','head'],armL:['upperarm.L','forearm.L','hand.L'],armR:['upperarm.R','forearm.R','hand.R'],legL:['thigh.L','shin.L','foot.L'],legR:['thigh.R','shin.R','foot.R']};
+const srcConfig={pelvis:['pelvis'],spine:['spine_01','spine_03'],head:['neck_01','head'],armL:['clavicle_l','upperarm_l','lowerarm_l','hand_l'],armR:['clavicle_r','upperarm_r','lowerarm_r','hand_r'],legL:['thigh_l','calf_l','foot_l','ball_l'],legR:['thigh_r','calf_r','foot_r','ball_r']};
+const targetNames={pelvis:['hips'],spine:['spine','chest'],head:['neck','head'],armL:['shoulder.L','upperarm.L','forearm.L','hand.L'],armR:['shoulder.R','upperarm.R','forearm.R','hand.R'],legL:['thigh.L','shin.L','foot.L','toe.L'],legR:['thigh.R','shin.R','foot.R','toe.R']};
 function collect(g){
  const all=[];g.scene.traverse(o=>{if(o.isBone)all.push(o)});
  const meshes=[];g.scene.traverse(o=>{if(o.isSkinnedMesh)meshes.push(o)});
@@ -22,6 +22,27 @@ function collect(g){
 function config(c,original){return Object.fromEntries(Object.entries(c).map(([key,arr])=>[key,arr.map(n=>{check(original.has(n),'Missing bone '+n);return original.get(n)})]))}
 function snapshot(sk){return sk.bones.map(b=>({p:b.position.clone(),q:b.quaternion.clone(),s:b.scale.clone()}))}
 function restore(sk,rest){sk.bones.forEach((b,i)=>{b.position.copy(rest[i].p);b.quaternion.copy(rest[i].q);b.scale.copy(rest[i].s)});sk.bones[0].parent?.updateMatrixWorld(true)}
+// Match segment directions in each rig's actual rest pose (A vs T pose).
+// Set the corresponding perpendicular twist axis in the joint's local frame.
+function calibratedRig(sk,c){
+ const rig=new Rig(sk).fromConfig(c);
+ for(const key of ['armL','armR','legL','legR']){
+  const chain=rig.chains[key];
+  for(let i=0;i<chain.length-1;i++){
+   const item=chain[i],bone=sk.bones[item.idx],child=sk.bones[chain[i+1].idx];
+   const p=bone.getWorldPosition(new THREE.Vector3()),v=child.getWorldPosition(new THREE.Vector3()).sub(p);
+   check(v.length()>1e-5,'Zero-length limb segment '+bone.name);v.normalize();
+   const twist=key.startsWith('arm')?new THREE.Vector3(0,0,-1):new THREE.Vector3(1,0,0);
+   twist.addScaledVector(v,-twist.dot(v)).normalize();
+   check(twist.length()>.9,'Invalid perpendicular axis '+bone.name);
+   const inv=bone.getWorldQuaternion(new THREE.Quaternion()).invert();
+   v.applyQuaternion(inv);twist.applyQuaternion(inv);
+   item.swing[0]=v.x;item.swing[1]=v.y;item.swing[2]=v.z;
+   item.twist[0]=twist.x;item.twist[1]=twist.y;item.twist[2]=twist.z;
+  }
+ }
+ return rig;
+}
 window.forgeRetarget=async (input)=>{
  const target=await parse(input.target),source=await parse(input.source);
  const t=collect(target),s=collect(source);
@@ -36,7 +57,7 @@ window.forgeRetarget=async (input)=>{
   const gltf=await parse(bytes);
   check(gltf.animations.length===1,'Expected one library clip '+name);
   const c=gltf.animations[0];
-  const baked=HumanClipRetargeter.retarget(c,new Rig(s.sk).fromConfig(sc),new Rig(t.sk).fromConfig(tc),{clip_name:'m2m_'+name,fps:30});
+  const baked=HumanClipRetargeter.retarget(c,calibratedRig(s.sk,sc),calibratedRig(t.sk,tc),{clip_name:'m2m_'+name,fps:30});
   check(baked.tracks.length>=20,'Insufficient baked tracks');
   const tracks=baked.tracks.map(track=>{
    const split=track.name.lastIndexOf('.'),name=rev.get(track.name.slice(0,split)),type=track.name.slice(split+1);
@@ -57,7 +78,7 @@ window.forgeLoadPreview=async b=>{
  const box=new THREE.Box3().setFromObject(model,true),center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
  const h=size.y;check(h>0&&h<100,'Invalid height');
  camera=new THREE.PerspectiveCamera(34,800/450,.01,h*30);
- camera.position.set(center.x,center.y+h*.12,center.z+h*2.15);camera.lookAt(center);
+ camera.position.set(center.x,center.y+h*.12,center.z+h*1.95);camera.lookAt(center);
  scene.add(new THREE.HemisphereLight(0xffffff,0x718094,2.2));
  const l=new THREE.DirectionalLight(0xffffff,3.0);l.position.set(3,5,4);scene.add(l);
  const fill=new THREE.DirectionalLight(0xb8d5ff,1.1);fill.position.set(-3,2,-4);scene.add(fill);
@@ -75,7 +96,7 @@ window.forgeFrame=(name,fraction,angle=0)=>{
  let minY=Infinity,maxY=-Infinity,maxRadius=0,finite=true,n=0;
  const v=new THREE.Vector3();
  for(const m of meshes){const p=m.geometry.attributes.position;for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i);m.applyBoneTransform(i,v);v.applyMatrix4(m.matrixWorld);finite=finite&&Number.isFinite(v.x+v.y+v.z);minY=Math.min(minY,v.y);maxY=Math.max(maxY,v.y);maxRadius=Math.max(maxRadius,v.distanceTo(rest.center));n++}}
- const c=rest.center,h=rest.h;camera.position.set(c.x+Math.sin(angle)*h*2.15,c.y+h*.12,c.z+Math.cos(angle)*h*2.15);camera.lookAt(c);renderer.render(scene,camera);
+ const c=rest.center,h=rest.h;camera.position.set(c.x+Math.sin(angle)*h*1.95,c.y+h*.12,c.z+Math.cos(angle)*h*1.95);camera.lookAt(c);renderer.render(scene,camera);
  document.querySelector('#label').textContent=name+' '+Math.round(fraction*100)+'%';
  return {finite,vertices:n,minY,maxY,maxRadiusOverHeight:maxRadius/h,groundOffset:(minY-rest.box.min.y)/h};
 };
