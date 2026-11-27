@@ -2,6 +2,7 @@ name: R70.18 surface WASM experiment
 on:
   push:
     branches: [forge-r70-surface-lab]
+    paths: ['studio/r70-surface-lab/CMakeLists.txt','studio/r70-surface-lab/*bridge*','studio/r70-surface-lab/smoke.cjs','studio/r70-surface-lab/garment_visual.mjs','.github/workflows/forge-r70-surface-lab.yml']
   workflow_dispatch:
 permissions:
   contents: read
