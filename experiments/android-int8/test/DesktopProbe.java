@@ -11,6 +11,7 @@ public class DesktopProbe{
   float[] input=new float[3*512*512];for(int y=0;y<512;y++)for(int x=0;x<512;x++){int i=y*512+x,p=rgb.getRGB(x,y);input[i]=((p>>16)&255)/255f;input[i+512*512]=((p>>8)&255)/255f;input[i+2*512*512]=(p&255)/255f;}
   Engine.Mesh m=Engine.run(new File(root,"models/triposr-encoder-int8.onnx"),new File(root,"models/triposr-decoder-fp32.onnx"),input,Float.parseFloat(args[2]),Float.parseFloat(args[3]),64,System.out::println);
   Engine.saveGlb(m,new File(out,"java-robot.glb"));
-  try(PrintWriter p=new PrintWriter(new File(out,"java-report.json"))){p.printf(Locale.US,"{\"vertices\":%d,\"triangles\":%d,\"elapsed_ms\":%d,\"hwm_mib\":%d}%n",m.v.size(),m.f.size(),m.elapsedMs,m.hwmMiB);}
+  for(int i=0;i<3;i++){int[] pixels=Preview.pixels(m,i);BufferedImage b=new BufferedImage(Preview.SIZE,Preview.SIZE,BufferedImage.TYPE_INT_RGB);b.setRGB(0,0,Preview.SIZE,Preview.SIZE,pixels,0,Preview.SIZE);ImageIO.write(b,"png",new File(out,"android-preview-"+i+".png"));}
+  try(PrintWriter p=new PrintWriter(new File(out,"java-report.json"))){p.printf(Locale.US,"{\"vertices\":%d,\"triangles\":%d,\"elapsed_ms\":%d,\"hwm_mib\":%d,\"removed_faces\":%d,\"smoothing_weight\":%f}%n",m.v.size(),m.f.size(),m.elapsedMs,m.hwmMiB,m.removedFaces,m.smoothingWeight);}
  }
 }
