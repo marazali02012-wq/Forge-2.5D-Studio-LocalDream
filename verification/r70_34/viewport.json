@@ -1,0 +1,32 @@
+[
+  {
+    "width": 800,
+    "height": 360,
+    "overflow": false,
+    "errors": [],
+    "identical_download": true,
+    "raf_hz": 60,
+    "drag_radians": 1.2466526324063762,
+    "pinch_radius_change": 0.8304745746376581
+  },
+  {
+    "width": 740,
+    "height": 360,
+    "overflow": false,
+    "errors": [],
+    "identical_download": true,
+    "raf_hz": 60,
+    "drag_radians": 1.2463918737716946,
+    "pinch_radius_change": 0.8852587976154922
+  },
+  {
+    "width": 667,
+    "height": 375,
+    "overflow": false,
+    "errors": [],
+    "identical_download": true,
+    "raf_hz": 58.5,
+    "drag_radians": 1.182202113545985,
+    "pinch_radius_change": 0.8454914402441225
+  }
+]

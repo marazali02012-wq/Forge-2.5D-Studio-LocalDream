@@ -1,0 +1,161 @@
+{
+  "archer.glb": {
+    "sha256": "532195402f05fb44b1337cad3911b5d78457c36a2ae90c45e7fef3e86f79eba9",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "astronaut.glb": {
+    "sha256": "bc2d9d05964b10af3be6a1fdc1e99bdc8c7b665982ad98bf33340f83c665801f",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "crystal_static.glb": {
+    "sha256": "5f05fbe02838a9c3490654b2f76a5e85f2488fb21555058773e9991ceea8bde6",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 0,
+    "clips": [],
+    "embeddedTexture": false,
+    "uv": false
+  },
+  "guard.glb": {
+    "sha256": "839444218cced25313406d802103d566b7202097a89a5c18a2b3b65b3b71b842",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "healer.glb": {
+    "sha256": "28c3cf7e59c5cd5cd08b414a0b1d2226f46c4455590a2a452e3ae54a7216b91b",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "knight.glb": {
+    "sha256": "82fb813d7dff7bb0a764f7bbd66b5ecf51fb9a2851ca9d80514c23925bbc850d",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "mage.glb": {
+    "sha256": "1e507332cfd7663d157c9e406b47c4485306d8596eb0f5b8fc288ab1148665df",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "miner.glb": {
+    "sha256": "8ae7dc791ee6c82fe99d7e3410091ffbb28c852b74bfa2dedbdeb521a2a7a436",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "pilot.glb": {
+    "sha256": "adfac61e7d692ba26e61bfc021f609fc8cbf2038cf6c48239e264a13ba70ad1d",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "robot.glb": {
+    "sha256": "a20ca4540d4d2a951b9c8f418abdd1455d9779b969cecf4e8b4531de9a41e3c0",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  },
+  "scout.glb": {
+    "sha256": "ab3556670a2071f01d4e82c7d0f133bc07d826e1695163c553d5058ef61b83dc",
+    "errors": 0,
+    "warnings": 0,
+    "joints": 26,
+    "clips": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt",
+      "death"
+    ],
+    "embeddedTexture": true,
+    "uv": true
+  }
+}

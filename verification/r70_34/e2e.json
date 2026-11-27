@@ -1,0 +1,142 @@
+{
+  "archer": {
+    "status": 200,
+    "seconds": 37.83,
+    "input_sha256": "db07070ca003b2de04d839928eedabcfed23945da60487557c4ff2ab082150e6",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 2798544,
+    "viewport": [
+      800,
+      360
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "astronaut": {
+    "status": 200,
+    "seconds": 31.92,
+    "input_sha256": "fe75a633a73ac5875c2d156fd6c0eaa45606a8b4a1f39b04b7a7082615c2a54b",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 2752896,
+    "viewport": [
+      740,
+      360
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "guard": {
+    "status": 200,
+    "seconds": 29.96,
+    "input_sha256": "3e7fdf5c4261a6310c9eec01cad85e944033a69339dd11e02356f24a6c40b08b",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 3247300,
+    "viewport": [
+      667,
+      375
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "healer": {
+    "status": 200,
+    "seconds": 32.27,
+    "input_sha256": "8a8e4e47fd0a24062f4ddde64d0ff1997e1a98134ab941fe6b6a1516d0f5c1f8",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 2666396,
+    "viewport": [
+      800,
+      360
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "knight": {
+    "status": 200,
+    "seconds": 30.76,
+    "input_sha256": "501e612847cc741bfb8864a87e375c4bc02ccf576bf0cdc1d881875d34f29401",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 3218304,
+    "viewport": [
+      740,
+      360
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "mage": {
+    "status": 200,
+    "seconds": 35.46,
+    "input_sha256": "7e63f4ac1ab130b6bb327ec64f6e782fc0cbb5e116ef1bb05ccdd9313e29076d",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 2174652,
+    "viewport": [
+      667,
+      375
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "miner": {
+    "status": 200,
+    "seconds": 35.07,
+    "input_sha256": "d9458a4bc8a7d8a2d78cfe20315a104633fa4c6b99b7226d99a65dd81b31f0ea",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 3348960,
+    "viewport": [
+      800,
+      360
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "pilot": {
+    "status": 200,
+    "seconds": 31.69,
+    "input_sha256": "c3be5bb4a9bd3eb8a0fbe0bb81a996206352a4fb4cc8a4923f545cb23ee6531c",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 2861424,
+    "viewport": [
+      740,
+      360
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "robot": {
+    "status": 200,
+    "seconds": 33.13,
+    "input_sha256": "d53b5dd974c5f4023d4ce5d046abd67121bf44d1bbd55ca9d068dd04f5ccbb79",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 3423944,
+    "viewport": [
+      667,
+      375
+    ],
+    "overflow": false,
+    "page_errors": []
+  },
+  "scout": {
+    "status": 200,
+    "seconds": 33.65,
+    "input_sha256": "5de31957c0da1152d48d35407af28fe19e52324f9023571e0ce30585e25f8d82",
+    "animations": 5,
+    "angles": 5,
+    "bytes": 2452652,
+    "viewport": [
+      800,
+      360
+    ],
+    "overflow": false,
+    "page_errors": []
+  }
+}

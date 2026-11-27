@@ -1,0 +1,82 @@
+{
+  "archer": {
+    "triangles": 13944,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.028572000039102634,
+    "depth_over_height": 0.2745
+  },
+  "astronaut": {
+    "triangles": 13756,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 1,
+    "volume": 0.036731744670793515,
+    "depth_over_height": 0.2598
+  },
+  "guard": {
+    "triangles": 16104,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.04336487951249121,
+    "depth_over_height": 0.3843
+  },
+  "healer": {
+    "triangles": 13200,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.034207612355460555,
+    "depth_over_height": 0.2568
+  },
+  "knight": {
+    "triangles": 16196,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.04493230434460497,
+    "depth_over_height": 0.3894
+  },
+  "mage": {
+    "triangles": 10736,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.022515245874877327,
+    "depth_over_height": 0.2667
+  },
+  "miner": {
+    "triangles": 16638,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.044326091434737376,
+    "depth_over_height": 0.2943
+  },
+  "pilot": {
+    "triangles": 14436,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.03998623859155045,
+    "depth_over_height": 0.2792
+  },
+  "robot": {
+    "triangles": 17328,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.055945462840096154,
+    "depth_over_height": 0.3492
+  },
+  "scout": {
+    "triangles": 12368,
+    "watertight": true,
+    "winding_consistent": true,
+    "degenerate": 0,
+    "volume": 0.02814514339500064,
+    "depth_over_height": 0.3002
+  }
+}

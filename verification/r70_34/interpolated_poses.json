@@ -1,0 +1,322 @@
+{
+  "archer": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.02170151018718822,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.00018560102208803306,
+      "max_floor_over_height": 0.0017303634272881718,
+      "max_motion_over_height": 0.15816353723132567,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.14091619394317392,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.10140164937498056,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -1.2456942250521445e-05,
+      "max_floor_over_height": 0.0003780302572115669,
+      "max_motion_over_height": 1.2889962549016365,
+      "sampled_frames": 121
+    }
+  },
+  "astronaut": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.024354833824298518,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.0003030944922449515,
+      "max_floor_over_height": 0.0012329487748366109,
+      "max_motion_over_height": 0.22198066258280622,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.11236071900343415,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.095536140611082,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -2.6439057846698112e-06,
+      "max_floor_over_height": 0.00015811685045477749,
+      "max_motion_over_height": 1.3096885442316333,
+      "sampled_frames": 121
+    }
+  },
+  "guard": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.022574635819994245,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.0003191543135566312,
+      "max_floor_over_height": 3.4805626702127574e-10,
+      "max_motion_over_height": 0.23571611217834407,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.15539959467902728,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.09164472030893901,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -4.95894738320328e-05,
+      "max_floor_over_height": 0.003416708398574535,
+      "max_motion_over_height": 1.2080959080300018,
+      "sampled_frames": 121
+    }
+  },
+  "healer": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.025661978864524194,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.00010969007200707743,
+      "max_floor_over_height": 0.00013954811168801707,
+      "max_motion_over_height": 0.09630816326533853,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.10299441287008339,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.10415108217289681,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -6.047411475323998e-06,
+      "max_floor_over_height": 0.0007358040248870654,
+      "max_motion_over_height": 1.293930591121971,
+      "sampled_frames": 121
+    }
+  },
+  "knight": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.02442369731176743,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.00024339443507261318,
+      "max_floor_over_height": 9.130629666089848e-06,
+      "max_motion_over_height": 0.21923006058145597,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.16635514133985826,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.09437234103743068,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -4.584832507750037e-05,
+      "max_floor_over_height": 0.0027850269015656823,
+      "max_motion_over_height": 1.2195260034429671,
+      "sampled_frames": 121
+    }
+  },
+  "mage": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.02378706287857871,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -7.25079101735803e-05,
+      "max_floor_over_height": 0.0011920024044268322,
+      "max_motion_over_height": 0.08372147818519066,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.07679412632891153,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.11337237384963553,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -8.135892661175363e-06,
+      "max_floor_over_height": 0.0010006610795260738,
+      "max_motion_over_height": 1.2916909121762823,
+      "sampled_frames": 121
+    }
+  },
+  "miner": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.03221625052765807,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.00037537068374884084,
+      "max_floor_over_height": 2.966648292142557e-05,
+      "max_motion_over_height": 0.2747476599677387,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.16024556806558718,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.09414855992937424,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -2.054339993489668e-05,
+      "max_floor_over_height": 0.0030396732235305575,
+      "max_motion_over_height": 1.267329426674306,
+      "sampled_frames": 121
+    }
+  },
+  "pilot": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.023156364681243765,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.0002607233934101136,
+      "max_floor_over_height": 0.001370322007398445,
+      "max_motion_over_height": 0.20136026449094682,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.12708881158957017,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.10001165921844168,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -1.0122929724535595e-05,
+      "max_floor_over_height": 0.001302286226386827,
+      "max_motion_over_height": 1.2931541155113178,
+      "sampled_frames": 121
+    }
+  },
+  "robot": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.025380140193798372,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.0002767152320727096,
+      "max_floor_over_height": 0.0010391483053832588,
+      "max_motion_over_height": 0.2542223269393579,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.15966247759153074,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.10036757850241042,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -2.418800132771427e-05,
+      "max_floor_over_height": 0.0017717306575248991,
+      "max_motion_over_height": 1.2642483020653874,
+      "sampled_frames": 121
+    }
+  },
+  "scout": {
+    "idle": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.02197537333446461,
+      "sampled_frames": 121
+    },
+    "walk": {
+      "min_floor_over_height": -0.00017694065487762077,
+      "max_floor_over_height": 0.002311051461581912,
+      "max_motion_over_height": 0.1544686883625597,
+      "sampled_frames": 121
+    },
+    "attack": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.12395783862934082,
+      "sampled_frames": 121
+    },
+    "hurt": {
+      "min_floor_over_height": 0.0,
+      "max_floor_over_height": 0.0,
+      "max_motion_over_height": 0.10025353810581675,
+      "sampled_frames": 121
+    },
+    "death": {
+      "min_floor_over_height": -5.010249811690864e-06,
+      "max_floor_over_height": 0.00459711578698161,
+      "max_motion_over_height": 1.2941880657268203,
+      "sampled_frames": 121
+    }
+  }
+}

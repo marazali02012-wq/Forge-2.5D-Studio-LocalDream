@@ -1,0 +1,12 @@
+{
+  "health": {
+    "service": "forge-triposr-cpu",
+    "version": "R70.34",
+    "busy": true
+  },
+  "occupied": 429,
+  "unauthorized": 401,
+  "foreign_origin": 403,
+  "preflight": 204,
+  "oversize": 413
+}

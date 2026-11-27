@@ -20,3 +20,12 @@ Kaynaklar
 - [Colab SSS](https://research.google.com/colaboratory/faq.html)
 - [Kaggle notebook çalışma süreleri](https://www.kaggle.com/product-feedback/302908)
 - [CloudFront 403](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/http-403-permission-denied.html)
+
+## Karşılaştırılan motorlar
+
+TripoSR bu sürümün CPU üretim yoludur. MIT lisanslı tek görsel motoru kullanılır. Stable Fast 3D doğrudan UV açma ve aydınlatma ayrıştırma sunuyor. Depodaki R58 denemesinde CPU ONNX yüklemesi çalışmış, gerçek çıktı alınamamıştır. Hunyuan3D-2 belgeleri şekil ve doku hattı için 16 GB GPU belleği belirtir. TRELLIS.2 belgeleri en az 24 GB NVIDIA GPU belleği belirtir. Bu altyapılarla bu sürümde eş girdili görsel kıyas yapılmadı.
+
+- [TripoSR](https://github.com/VAST-AI-Research/TripoSR)
+- [Stable Fast 3D](https://github.com/Stability-AI/stable-fast-3d)
+- [Hunyuan3D-2](https://github.com/Tencent-Hunyuan/Hunyuan3D-2)
+- [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)
