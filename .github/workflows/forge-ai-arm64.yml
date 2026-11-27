@@ -15,16 +15,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install onnxruntime==1.23.2 numpy==2.2.6 pillow==12.0.0 scikit-image==0.25.2 trimesh==4.9.0 matplotlib==3.10.7
+      - run: pip install onnx==1.19.1 onnxruntime==1.23.2 numpy==2.2.6 pillow==12.0.0 scikit-image==0.25.2 trimesh==4.9.0 matplotlib==3.10.7
       - name: Prepare verified weights
         run: |
           mkdir -p ai-proof-output
           curl -fL --retry 2 -o ai-proof-output/robot.png https://raw.githubusercontent.com/VAST-AI-Research/TripoSR/main/examples/robot.png
           test "$(git hash-object ai-proof-output/robot.png)" = 31ce9687b54dddf2907a39f25b09d62bcbf2a8b0
           python -u experiments/ai-int8/mobile_probe.py --prepare
-      - name: ARM64 low memory reconstruction
-        run: |
-          FORGE_OFFLINE=1 FORGE_MODE=lean FORGE_OUTPUT=lean-output python -u experiments/ai-int8/mobile_probe.py
       - name: Convert to mobile ORT format
         run: python -m onnxruntime.tools.convert_onnx_models_to_ort ai-proof-output/models/triposr-encoder-int8.onnx --optimization_style Fixed --target_platform arm
       - name: ARM64 ORT low memory reconstruction
