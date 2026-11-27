@@ -24,13 +24,37 @@ function snapshot(sk){return sk.bones.map(b=>({p:b.position.clone(),q:b.quaterni
 function restore(sk,rest){sk.bones.forEach((b,i)=>{b.position.copy(rest[i].p);b.quaternion.copy(rest[i].q);b.scale.copy(rest[i].s)});sk.bones[0].parent?.updateMatrixWorld(true)}
 // Match segment directions in each rig's actual rest pose (A vs T pose).
 // Set the corresponding perpendicular twist axis in the joint's local frame.
-function calibratedRig(sk,c){
+function calibratedRig(sk,c,meshes){
  const rig=new Rig(sk).fromConfig(c);
  for(const key of ['armL','armR','legL','legR']){
   const chain=rig.chains[key];
-  for(let i=0;i<chain.length-1;i++){
-   const item=chain[i],bone=sk.bones[item.idx],child=sk.bones[chain[i+1].idx];
-   const p=bone.getWorldPosition(new THREE.Vector3()),v=child.getWorldPosition(new THREE.Vector3()).sub(p);
+  for(let i=0;i<chain.length-(key.startsWith('arm')?0:1);i++){
+   const item=chain[i],bone=sk.bones[item.idx],child=chain[i+1]&&sk.bones[chain[i+1].idx];
+   const p=bone.getWorldPosition(new THREE.Vector3());
+   let v;
+   if(child) v=child.getWorldPosition(new THREE.Vector3()).sub(p);
+   else {
+    // Palm direction from actual source finger roots when available.
+    const fingers=bone.children.filter(b=>b.isBone&&/index|middle|ring|pinky/i.test(b.name));
+    if(fingers.length){
+     v=new THREE.Vector3();for(const f of fingers)v.add(f.getWorldPosition(new THREE.Vector3()).sub(p));v.multiplyScalar(1/fingers.length);
+    }else{
+     // Forge has a single hand bone, so estimate palm axis from its actual weighted geometry.
+     const prev=sk.bones[chain[i-1].idx].getWorldPosition(new THREE.Vector3()),axis=p.clone().sub(prev).normalize();
+     const mean=new THREE.Vector3(),pt=new THREE.Vector3();let n=0;
+     for(const m of meshes){if(!m.name.includes('human')||!m.geometry.attributes.skinIndex)continue;
+      const ix=m.geometry.attributes.skinIndex,wt=m.geometry.attributes.skinWeight,ps=m.geometry.attributes.position;
+      for(let k=0;k<ps.count;k++){
+       let w=0;for(let j=0;j<4;j++)if(ix.array[k*4+j]===item.idx)w+=wt.array[k*4+j];
+       if(w<.75)continue;
+       pt.fromBufferAttribute(ps,k).applyMatrix4(m.matrixWorld).sub(p);
+       if(pt.dot(axis)<=.02)continue;
+       mean.add(pt);n++;
+      }
+     }
+     v=n?mean.multiplyScalar(1/n):axis;
+    }
+   }
    check(v.length()>1e-5,'Zero-length limb segment '+bone.name);v.normalize();
    const twist=key.startsWith('arm')?new THREE.Vector3(0,0,-1):new THREE.Vector3(1,0,0);
    twist.addScaledVector(v,-twist.dot(v)).normalize();
@@ -43,6 +67,30 @@ function calibratedRig(sk,c){
  }
  return rig;
 }
+// Ground the baked contact poses using actual skinned vertices, not the bone tips.
+// No change to X/Z travel. Reject excessive correction rather than hiding a bad pose.
+function groundClip(baked,t,rest,restFloor,height){
+ restore(t.sk,rest);
+ const posTrack=baked.tracks.find(x=>x.name.endsWith('.position'));check(posTrack,'Missing pelvis track');
+ const byName=new Map(t.sk.bones.map(b=>[b.name,b]));
+ const quatTracks=baked.tracks.filter(x=>x.name.endsWith('.quaternion'));
+ const bone=byName.get(posTrack.name.slice(0,-9));check(bone,'Unknown pelvis track');
+ const p=new THREE.Vector3();let max=0;
+ const worldToParent=new THREE.Matrix3().setFromMatrix4(bone.parent.matrixWorld).invert();
+ for(let f=0;f<posTrack.times.length;f++){
+  for(const track of quatTracks){const b=byName.get(track.name.slice(0,-11));check(b,'Unknown rotation track');b.quaternion.fromArray(track.values,f*4)}
+  bone.position.fromArray(posTrack.values,f*3);t.sk.bones[0].parent?.updateMatrixWorld(true);
+  let min=Infinity;
+  for(const m of t.meshes){const a=m.geometry.attributes.position;for(let i=0;i<a.count;i++){
+   p.fromBufferAttribute(a,i);m.applyBoneTransform(i,p);p.applyMatrix4(m.matrixWorld);min=Math.min(min,p.y);
+  }}
+  const shift=restFloor-min;check(Number.isFinite(shift)&&Math.abs(shift)<height*.08,'Ground correction excessive '+baked.name);
+  const local=new THREE.Vector3(0,shift,0).applyMatrix3(worldToParent);
+  posTrack.values[f*3]+=local.x;posTrack.values[f*3+1]+=local.y;posTrack.values[f*3+2]+=local.z;
+  max=Math.max(max,Math.abs(shift)/height);
+ }
+ restore(t.sk,rest);return max;
+}
 window.forgeRetarget=async (input)=>{
  const target=await parse(input.target),source=await parse(input.source);
  const t=collect(target),s=collect(source);
@@ -52,13 +100,15 @@ window.forgeRetarget=async (input)=>{
  const tr=snapshot(t.sk),sr=snapshot(s.sk);
  const rev=new Map([...t.original].map(([a,b])=>[b,a]));
  const output=[];
+ target.scene.updateMatrixWorld(true);const restBox=new THREE.Box3().setFromObject(target.scene,true),height=restBox.max.y-restBox.min.y;
  for(const [name,bytes] of Object.entries(input.clips)){
   restore(t.sk,tr);restore(s.sk,sr);
   const gltf=await parse(bytes);
   check(gltf.animations.length===1,'Expected one library clip '+name);
   const c=gltf.animations[0];
-  const baked=HumanClipRetargeter.retarget(c,calibratedRig(s.sk,sc),calibratedRig(t.sk,tc),{clip_name:'m2m_'+name,fps:30});
+  const baked=HumanClipRetargeter.retarget(c,calibratedRig(s.sk,sc,s.meshes),calibratedRig(t.sk,tc,t.meshes),{clip_name:'m2m_'+name,fps:30});
   check(baked.tracks.length>=20,'Insufficient baked tracks');
+  const maxGroundCorrection=groundClip(baked,t,tr,restBox.min.y,height);
   const tracks=baked.tracks.map(track=>{
    const split=track.name.lastIndexOf('.'),name=rev.get(track.name.slice(0,split)),type=track.name.slice(split+1);
    check(name&&['quaternion','position'].includes(type),'Unknown target track '+track.name);
@@ -66,7 +116,7 @@ window.forgeRetarget=async (input)=>{
    check(track.times.every((v,i)=>!i||v>track.times[i-1]),'Invalid track times');
    return {name,type,times:Array.from(track.times),values:Array.from(track.values)};
   });
-  output.push({name:baked.name,duration:baked.duration,tracks});
+  output.push({name:baked.name,duration:baked.duration,tracks,maxGroundCorrection});
  }
  return {sourceBones:s.sk.bones.map(b=>b.name),targetBones:[...t.original.keys()],clips:output};
 };

@@ -41,7 +41,7 @@ try{
    const sampler=doc.createAnimationSampler().setInput(inp).setOutput(o).setInterpolation('LINEAR');
    a.addSampler(sampler).addChannel(doc.createAnimationChannel().setSampler(sampler).setTargetNode(n).setTargetPath(t.type==='quaternion'?'rotation':'translation'));
   }
-  report.clips.push({name:c.name,duration:c.duration,tracks:c.tracks.length});
+  report.clips.push({name:c.name,duration:c.duration,tracks:c.tracks.length,maxGroundCorrection:c.maxGroundCorrection});
  }
  const bytes=await io.writeBinary(doc);
  fs.writeFileSync(path.join(out,'anatomy-mesh2motion.glb'),bytes);
@@ -54,6 +54,7 @@ try{
   for(const fraction of [.1,.25,.45,.65,.85,.98]){
    const frame=await page.evaluate(([name,t])=>window.forgeFrame(name,t,0),[name,fraction]);
    assert.ok(frame.finite&&frame.vertices>0&&frame.maxRadiusOverHeight<3,'Exploding/nonfinite mesh '+name);
+   if(name.startsWith('m2m_'))assert.ok(Math.abs(frame.groundOffset)<.012,'Ground residual '+name+' '+frame.groundOffset);
    await page.screenshot({path:path.join(out,name+'-'+fraction+'-front.png')});
    if(fraction===.65){await page.evaluate(name=>window.forgeFrame(name,.65,Math.PI/2),name);await page.screenshot({path:path.join(out,name+'-side.png')})}
    report.frames.push({name,fraction,...frame});
