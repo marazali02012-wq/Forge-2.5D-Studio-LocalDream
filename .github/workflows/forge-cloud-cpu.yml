@@ -27,8 +27,12 @@ jobs:
       - run: pip check
       - name: Real model weights and image inference
         run: PYTHONPATH=/tmp/triposr timeout 600 python studio/cloud-ai/cpu_probe.py
+      - name: Independent humanoid robot generation
+        run: FORGE_IMAGE=/tmp/triposr/examples/robot.png FORGE_OUTPUT=cloud-character-qa PYTHONPATH=/tmp/triposr timeout 600 python studio/cloud-ai/cpu_probe.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: forge-real-cpu-ai
-          path: cloud-cpu-qa/
+          path: |
+            cloud-cpu-qa/
+            cloud-character-qa/
