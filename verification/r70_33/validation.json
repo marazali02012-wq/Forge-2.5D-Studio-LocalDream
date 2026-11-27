@@ -1,0 +1,90 @@
+{
+  "results/archer/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/astronaut/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/guard/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/healer/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/knight/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/mage/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/miner/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/pilot/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/robot/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/scout/generated.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/astronaut/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/guard/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/healer/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/knight/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/mage/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/miner/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/pilot/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/robot/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "results/scout/rig/robot_rig_candidate.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "evidence/Kristal_Sovalye.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "evidence/JPEG.glb": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "evidence/WEBP.glb": {
+    "errors": 0,
+    "warnings": 0
+  }
+}

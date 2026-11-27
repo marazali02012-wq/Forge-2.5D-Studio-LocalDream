@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "seconds": 39.654155832000015,
+  "bytes": 4023876,
+  "input_sha256": "5797bd814d84543dc8b280aafbdc3200ca3f21944c05b0aa7c283d999d23f440",
+  "clips": [
+    "idle",
+    "walk",
+    "attack",
+    "hurt",
+    "death"
+  ],
+  "identical_download": true
+}

@@ -1,0 +1,126 @@
+[
+  {
+    "name": "archer",
+    "source": "db07070ca003b2de04d839928eedabcfed23945da60487557c4ff2ab082150e6",
+    "raw_sha256": "f31f905dbdd0e250296a740f4b4d102bb7334ed64c12233b11f9296e6ba141de",
+    "triangles": 13944,
+    "seconds": 25.633415308999986,
+    "watertight": true,
+    "rig": false,
+    "accepted": false,
+    "failures": [],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "astronaut",
+    "source": "fe75a633a73ac5875c2d156fd6c0eaa45606a8b4a1f39b04b7a7082615c2a54b",
+    "raw_sha256": "ff4a9061c5319aa6a6f9243f3b5cd003973d91e825841fee4368b007332705d1",
+    "triangles": 13756,
+    "seconds": 25.39836279299999,
+    "watertight": true,
+    "rig": true,
+    "accepted": true,
+    "failures": [],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "guard",
+    "source": "3e7fdf5c4261a6310c9eec01cad85e944033a69339dd11e02356f24a6c40b08b",
+    "raw_sha256": "9f690138c27e11c26529264af1e7335e180b310310ce3d8ef0f9f4d0501d4bd9",
+    "triangles": 16104,
+    "seconds": 22.798836059000053,
+    "watertight": true,
+    "rig": true,
+    "accepted": true,
+    "failures": [],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "healer",
+    "source": "8a8e4e47fd0a24062f4ddde64d0ff1997e1a98134ab941fe6b6a1516d0f5c1f8",
+    "raw_sha256": "910c97ce0559de9155012d7518ecffae5622b94ce4db6de7febb12ed5dc34ea9",
+    "triangles": 13200,
+    "seconds": 22.870807376000016,
+    "watertight": true,
+    "rig": true,
+    "accepted": false,
+    "failures": [
+      "attack"
+    ],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "knight",
+    "source": "501e612847cc741bfb8864a87e375c4bc02ccf576bf0cdc1d881875d34f29401",
+    "raw_sha256": "ddf13b5a30120feb88be2c0301111f8c1691afd00fe34f5f06aba6fabb32a14c",
+    "triangles": 16196,
+    "seconds": 23.79098360400002,
+    "watertight": true,
+    "rig": true,
+    "accepted": true,
+    "failures": [],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "mage",
+    "source": "7e63f4ac1ab130b6bb327ec64f6e782fc0cbb5e116ef1bb05ccdd9313e29076d",
+    "raw_sha256": "0c55c8ecb8cf588bd70590b2f6d4c41506f94adba4c4d62de71782b7fb43f945",
+    "triangles": 10736,
+    "seconds": 23.740000675000033,
+    "watertight": true,
+    "rig": true,
+    "accepted": false,
+    "failures": [
+      "attack"
+    ],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "miner",
+    "source": "d9458a4bc8a7d8a2d78cfe20315a104633fa4c6b99b7226d99a65dd81b31f0ea",
+    "raw_sha256": "1bc766cc0ca18da07d0f68fe2dbcf84e41aaf5e0df2f777a6fca1d4d08237d27",
+    "triangles": 16638,
+    "seconds": 24.593862064000064,
+    "watertight": true,
+    "rig": true,
+    "accepted": true,
+    "failures": [],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "pilot",
+    "source": "c3be5bb4a9bd3eb8a0fbe0bb81a996206352a4fb4cc8a4923f545cb23ee6531c",
+    "raw_sha256": "aef9ec6c72583e190be2a162a9984edde1fb1a78c9cdac3f3b2c2a7d64c818c3",
+    "triangles": 14436,
+    "seconds": 25.271331256000053,
+    "watertight": true,
+    "rig": true,
+    "accepted": true,
+    "failures": [],
+    "peak_rss_kib_linux": null
+  },
+  {
+    "name": "robot",
+    "source": "d53b5dd974c5f4023d4ce5d046abd67121bf44d1bbd55ca9d068dd04f5ccbb79",
+    "raw_sha256": "6839cf1b470201a7e97d6fe00c1a022499542b720851338889c4136878797af8",
+    "triangles": 17328,
+    "seconds": 25.259460717000024,
+    "watertight": true,
+    "rig": true,
+    "accepted": true,
+    "failures": [],
+    "peak_rss_kib_linux": 3950712
+  },
+  {
+    "name": "scout",
+    "source": "5de31957c0da1152d48d35407af28fe19e52324f9023571e0ce30585e25f8d82",
+    "raw_sha256": "6c95c95523eeb666b486aa9322727a2773014d10a759b43f5eb41a4725c4991c",
+    "triangles": 12368,
+    "seconds": 24.81921135999994,
+    "watertight": true,
+    "rig": true,
+    "accepted": true,
+    "failures": [],
+    "peak_rss_kib_linux": 3950980
+  }
+]

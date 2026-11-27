@@ -1,0 +1,23 @@
+{
+  "device": "cpu",
+  "real_generation": true,
+  "model": "stabilityai/TripoSR",
+  "resolution": 192,
+  "input_sha256": "5797bd814d84543dc8b280aafbdc3200ca3f21944c05b0aa7c283d999d23f440",
+  "load_seconds": 11.781170341999996,
+  "relaxation": {
+    "accepted": true,
+    "max_displacement_over_extent": 0.001445064598826359,
+    "flipped_faces": 0,
+    "minimum_area_ratio": 0.5757181681402878
+  },
+  "components": 2,
+  "vertex_color": true,
+  "normals_exported": true,
+  "vertices": 23040,
+  "faces": 46072,
+  "watertight": true,
+  "bytes": 1199284,
+  "seconds": 42.45121669399998,
+  "peak_rss_kib_linux": 3752972
+}

@@ -1,0 +1,15 @@
+{
+  "WEBP": {
+    "status": 200,
+    "seconds": 26.93382311000005,
+    "glb": true
+  },
+  "JPEG": {
+    "status": 200,
+    "seconds": 28.393933720000064,
+    "glb": true
+  },
+  "auth": 401,
+  "invalid": 400,
+  "mime": 415
+}
