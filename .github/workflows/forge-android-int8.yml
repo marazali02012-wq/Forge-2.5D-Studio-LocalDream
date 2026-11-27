@@ -1,4 +1,4 @@
-name: Forge native Android INT8 cleanup and preview
+name: Forge MC33 native extraction comparison
 on:
   push:
     branches: [forge-ai-int8-proof]
@@ -33,6 +33,7 @@ jobs:
           bash experiments/android-int8/fetch_assets.sh android-probe-data
           mkdir -p experiments/android-int8/app/src/main/assets
           cp android-probe-data/models/* android-probe-data/robot.png experiments/android-int8/app/src/main/assets/
+          cp experiments/android-int8/app/src/main/cpp/vendor/mc33/LICENSE.txt experiments/android-int8/app/src/main/assets/MC33-LICENSE.txt
       - name: Assemble signed debug APK
         working-directory: experiments/android-int8
         run: gradle --no-daemon :app:assembleDebug
@@ -41,6 +42,7 @@ jobs:
           mkdir -p android-build
           cp experiments/android-int8/app/build/outputs/apk/debug/app-debug.apk android-build/Forge_3D_Telefon_RAM_Test.apk
           unzip -l android-build/Forge_3D_Telefon_RAM_Test.apk | grep 'lib/arm64-v8a/libonnxruntime.so'
+          unzip -l android-build/Forge_3D_Telefon_RAM_Test.apk | grep 'lib/arm64-v8a/libforge_mc33.so'
           BT=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
           "$BT" verify --verbose android-build/Forge_3D_Telefon_RAM_Test.apk
           sha256sum android-build/*.apk > android-build/SHA256.txt
@@ -64,12 +66,15 @@ jobs:
         run: |
           bash experiments/android-int8/fetch_assets.sh android-probe-data full
           curl -fL --retry 2 -o ort.jar https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime/1.23.2/onnxruntime-1.23.2.jar
-          mkdir -p java-classes java-proof-output
-          javac -cp ort.jar -d java-classes experiments/android-int8/app/src/main/java/com/forgestudio/mobileprobe/Engine.java experiments/android-int8/app/src/main/java/com/forgestudio/mobileprobe/Preview.java experiments/android-int8/test/DesktopProbe.java
+          mkdir -p java-classes java-proof-output native-lib
+          g++ -std=c++17 -O2 -shared -fPIC -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" experiments/android-int8/app/src/main/cpp/mc33_jni.cpp -o native-lib/libforge_mc33.so
+          javac -cp ort.jar -d java-classes experiments/android-int8/app/src/main/java/com/forgestudio/mobileprobe/{Engine,Preview,NativeSurface}.java experiments/android-int8/test/{DesktopProbe,NativeSurfaceProbe}.java
+          java -Djava.library.path=native-lib -cp ort.jar:java-classes com.forgestudio.mobileprobe.NativeSurfaceProbe
           read RADIUS THRESHOLD < <(python -c 'import json;d=json.load(open("android-probe-data/models/triposr-decoder-meta.json"))["params"];print(d["radius"],d["density_threshold"])')
-          java -Xmx512m -Djava.awt.headless=true -cp ort.jar:java-classes com.forgestudio.mobileprobe.DesktopProbe android-probe-data java-proof-output "$RADIUS" "$THRESHOLD"
+          java -Xmx512m -Djava.library.path=native-lib -Dforge.surface=mc33 -Djava.awt.headless=true -cp ort.jar:java-classes com.forgestudio.mobileprobe.DesktopProbe android-probe-data java-proof-output "$RADIUS" "$THRESHOLD"
           pip install trimesh==4.9.0 numpy==2.2.6 matplotlib==3.10.7 scipy==1.15.3
           python experiments/android-int8/test/inspect_glb.py java-proof-output
+          python -c 'import json;d=json.load(open("java-proof-output/java-report.json"));assert d["surface"]=="mc33" and d["watertight"] and d["winding_consistent"] and d["zero_area_faces"]==0,d;print(d)'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
