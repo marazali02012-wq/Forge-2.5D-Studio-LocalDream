@@ -4,28 +4,38 @@ from scipy.spatial.transform import Rotation
 from scipy.sparse import coo_matrix,diags
 NAMES=['root','hips','spine','chest','neck','head','shoulder.L','upperarm.L','forearm.L','hand.L','shoulder.R','upperarm.R','forearm.R','hand.R','thigh.L','shin.L','foot.L','toe.L','thigh.R','shin.R','foot.R','toe.R','weapon','cape.1','cape.2','shield']
 PARENT=[-1,0,1,2,3,4,3,6,7,8,3,10,11,12,1,14,15,16,1,18,19,20,13,3,23,9]
-def run(src,out,texture=False):
+def run(src,out,texture=False,save_poses=True):
  out=pathlib.Path(out);out.mkdir(exist_ok=True,parents=True)
  m=trimesh.load(src,force='mesh',process=False);v=np.asarray(m.vertices)[:,[1,2,0]].copy();v-= (v.min(0)+v.max(0))/2;v*=2/np.ptp(v,axis=0).max();v[:,1]-=v[:,1].min();m.vertices=v;h=v[:,1].max();assert m.is_watertight and h>0
  def loops(y):
   sec=m.section(plane_normal=[0,1,0],plane_origin=[0,y,0]);return [] if sec is None else [a[:-1] for a in sec.discrete if len(a)>12]
- def width(y):
-  a=loops(y);return np.ptp(np.concatenate(a)[:,0]) if a else np.inf
  # Estimate independent leg and arm bands from actual cross-sections.
  levels=np.arange(.025,.851,.0125)*h
  sections={float(y):loops(y) for y in levels}
+ # Off-center accessories shift the bounding-box midpoint. The broad
+ # upper torso/neck sections are a more stable fallback anatomical axis.
+ section_axis=0.
  def side_at(y,s):
-  return sorted([a for a in sections[float(y)] if s*np.mean(a[:,0])>.07*h and np.ptp(a[:,0])>.025*h],key=lambda a:abs(np.mean(a[:,0])))
+  return sorted([a for a in sections[float(y)] if s*(np.mean(a[:,0])-section_axis)>.07*h and np.ptp(a[:,0])>.025*h],key=lambda a:abs(np.mean(a[:,0])-section_axis))
  def central_at(y):
-  a=sections[float(y)];return min(a,key=lambda b:abs(b[:,0].mean())) if a else None
- arm_levels=[];leg_levels=[]
- for y in levels:
-  l,r=side_at(y,-1),side_at(y,1);c=central_at(y)
-  if not l or not r:continue
-  central=c is not None and abs(c[:,0].mean())<.055*h
-  if y<.40*h and (not central or len(l)>=2 and len(r)>=2):leg_levels.append(y)
-  if central or len(l)>=2 and len(r)>=2:arm_levels.append(y)
- assert len(leg_levels)>=3 and len(arm_levels)>=3,'No reliable bilateral limb bands'
+  a=sections[float(y)];return min(a,key=lambda b:abs(b[:,0].mean()-section_axis)) if a else None
+ def limb_bands():
+  arm_levels=[];leg_levels=[]
+  for y in levels:
+   left,right=side_at(y,-1),side_at(y,1);central_loop=central_at(y)
+   if not left or not right:continue
+   central=central_loop is not None and abs(central_loop[:,0].mean()-section_axis)<.055*h
+   if y<.40*h and (not central or len(left)>=2 and len(right)>=2):leg_levels.append(y)
+   if central or len(left)>=2 and len(right)>=2:arm_levels.append(y)
+  return arm_levels,leg_levels
+ arm_levels,leg_levels=limb_bands()
+ recentered=len(leg_levels)<3 or len(arm_levels)<4
+ if recentered:
+  upper=[max(sections[float(y)],key=lambda a:np.ptp(a[:,0]))[:,0].mean()
+         for y in levels if .68*h<y<.82*h and sections[float(y)]]
+  if upper:section_axis=float(np.median(upper))
+  arm_levels,leg_levels=limb_bands()
+ if len(leg_levels)<3 or len(arm_levels)<3:raise ValueError('No reliable bilateral limb bands')
  # contiguous arm groups; choose longest, never guess on a fused silhouette.
  groups=[]
  for y in arm_levels:
@@ -35,7 +45,7 @@ def run(src,out,texture=False):
  arms=np.asarray(arms);legs=np.asarray(leg_levels);legs=legs[legs<=.40*h]
  def at_frac(a,f):return float(a[min(len(a)-1,round((len(a)-1)*f))])
  def central_width(y):
-  c=central_at(y);return float(np.ptp(c[:,0])) if c is not None and abs(c[:,0].mean())<.06*h else np.inf
+  c=central_at(y);return float(np.ptp(c[:,0])) if c is not None and abs(c[:,0].mean()-section_axis)<.06*h else np.inf
  cand=[]
  for y in levels:
   if not arms[-1]+.035*h<y<.84*h:continue
@@ -47,7 +57,7 @@ def run(src,out,texture=False):
  P=np.zeros((26,3));P[0]=[cx,0,cz];hip_y=min(legs[-1]+.035*h,neck*.8);P[1]=[cx,hip_y,cz];P[2]=[cx,hip_y+(neck-hip_y)*.25,cz];P[3]=[cx,hip_y+(neck-hip_y)*.65,cz];P[4]=center;P[5]=[cx,neck+.04*h,cz]
  for sign,arm,leg in [(1,6,14),(-1,10,18)]:
   def limb_at(y,outer):
-   a=side_at(y,sign);assert a,'Missing limb section';return (a[-1] if outer else a[0]).mean(0)
+   a=side_at(y,sign);assert a,'Missing limb section';return (max(a,key=lambda loop:np.ptp(loop[:,0])) if outer and recentered else a[-1] if outer else a[0]).mean(0)
   ankle=limb_at(at_frac(legs,.12),False);knee=limb_at(at_frac(legs,.55),False);hip=limb_at(float(legs[-1]),False);hip[1]=hip_y
   hand=limb_at(at_frac(arms,.12),True);elbow=limb_at(at_frac(arms,.50),True);upper=limb_at(at_frac(arms,.95),True);shoulder=upper+(upper-elbow)*.40;shoulder[1]=min(neck-.025*h,shoulder[1]);wrist=hand+(elbow-hand)*.18
   toe=ankle.copy();toe[2]+=.035*h;toe[1]=.025*h
@@ -112,7 +122,7 @@ def run(src,out,texture=False):
   child=[k for k in range(26) if PARENT[k]==j]
   if child:n['children']=child
  nodes.append({'name':'AI character','mesh':0,'skin':0});ib=np.tile(np.eye(4),(26,1,1));ib[:,:3,3]=-P;ibm=add(ib.transpose(0,2,1).astype('f4'),'MAT4',5126)
- gltf={'asset':{'version':'2.0','generator':'Forge R70.33 adaptive rig'},'scene':0,'scenes':[{'nodes':[0,26]}],'nodes':nodes,'skins':[{'joints':list(range(26)),'skeleton':0,'inverseBindMatrices':ibm}],'meshes':[{'primitives':[{'attributes':attributes,'material':0}]}],'materials':[{'pbrMetallicRoughness':{'baseColorFactor':[1,1,1,1],'metallicFactor':0,'roughnessFactor':.8}}],'animations':[]}
+ gltf={'asset':{'version':'2.0','generator':'Forge R70.34 adaptive rig'},'scene':0,'scenes':[{'nodes':[0,26]}],'nodes':nodes,'skins':[{'joints':list(range(26)),'skeleton':0,'inverseBindMatrices':ibm}],'meshes':[{'primitives':[{'attributes':attributes,'material':0}]}],'materials':[{'pbrMetallicRoughness':{'baseColorFactor':[1,1,1,1],'metallicFactor':0,'roughnessFactor':.8}}],'animations':[]}
  if texture:
   gltf.update(images=[{'bufferView':image_view,'mimeType':'image/png'}],textures=[{'source':0,'sampler':0}],samplers=[{'magFilter':9729,'minFilter':9729,'wrapS':33071,'wrapT':33071}])
   gltf['materials'][0]['pbrMetallicRoughness']['baseColorTexture']={'index':0}
@@ -128,7 +138,7 @@ def run(src,out,texture=False):
   return sum(wt[:,k,None]*(np.einsum('nij,nj->ni',A[ids[:,k]],v-P[ids[:,k]])+T[ids[:,k]]) for k in range(4))
  identity=np.tile([0.,0,0,1],(26,1));assert np.max(np.abs(skin(identity)-v))<1e-6
  for clip,dur in [('idle',1.6),('walk',.9),('attack',.8),('hurt',.5),('death',1.4)]:
-  t=np.linspace(0,dur,31);qs=[];ts=[];rat=[];moved=[];floor=[];sole_traces=[]
+  t=np.linspace(0,dur,31);qs=[];ts=[];rat=[];moved=[];floor=[];sole_traces=[];contact_error=[]
   soles=[np.flatnonzero((y<.06*h)&(side*(v[:,0]-cx)>0)) for side in (-1,1)]
   def pose_angles(f):
    x=np.sin(f*2*np.pi);pulse=np.sin(f*np.pi);ang=np.zeros((26,3));
@@ -136,7 +146,11 @@ def run(src,out,texture=False):
    if clip=='walk':
     for k,sign in [(14,1),(18,-1)]:ang[k,0]=sign*18*x;ang[k+1,0]=12*max(0,sign*x);ang[k+2,0]=-5*max(0,sign*x)
     ang[7,0]=-15*x;ang[11,0]=15*x
-   if clip=='attack':ang[11,0]=-32*pulse;ang[12,0]=-40*pulse;ang[3,1]=-12*pulse;ang[13,2]=-8*pulse
+   if clip=='attack':
+    # Share the strike across the chest, shoulder and elbow. A large
+    # isolated elbow bend pulls fused sleeves and props across the seam.
+    ang[3,1]=-9*pulse;ang[11,0]=-26*pulse
+    ang[12,0]=-20*pulse;ang[13,2]=-7*pulse
    if clip=='hurt':ang[3,0]=-12*pulse;ang[5,2]=10*pulse
    if clip=='death':ang[0,0]=-82*f;ang[7,2]=10*f;ang[11,2]=-10*f
    return ang
@@ -153,7 +167,19 @@ def run(src,out,texture=False):
     if max(strain)<1.5:break
   for f in t/dur:
    ang=pose_angles(f)*gain
-   q=Rotation.from_euler('xyz',ang,degrees=True).as_quat();sv=skin(q);tr=np.array([0,-sv[:,1].min(),0]);sv+=tr;qs.append(q);ts.append(tr);r=np.linalg.norm(sv[edges[:,0]]-sv[edges[:,1]],axis=1)[mask]/rest[mask];rat.append(np.quantile(r,.99));moved.append(np.max(np.linalg.norm(sv-v,axis=1)))
+   q=Rotation.from_euler('xyz',ang,degrees=True).as_quat();sv=skin(q)
+   tr=np.array([0,-sv[:,1].min(),0])
+   if clip=='walk' and all(len(sole) for sole in soles):
+    # Anchor the stance sole in the ground plane. Blend near exchange to
+    # avoid snapping the pelvis between two competing contact constraints.
+    phase=np.sin(f*2*np.pi)
+    stance=1 if phase>=0 else 0
+    sole=soles[stance]
+    offset=(v[sole]-sv[sole]).mean(0)
+    blend=min(abs(phase)*4,1.)
+    tr[[0,2]]=offset[[0,2]]*blend
+    if blend==1.:contact_error.append(float(np.linalg.norm((offset-tr)[[0,2]])/h))
+   sv+=tr;qs.append(q);ts.append(tr);r=np.linalg.norm(sv[edges[:,0]]-sv[edges[:,1]],axis=1)[mask]/rest[mask];rat.append(np.quantile(r,.99));moved.append(np.max(np.linalg.norm(sv-v,axis=1)))
    floor.append(float(sv[:,1].min()));sole_traces.append([sv[sole].mean(0) if len(sole) else [np.nan]*3 for sole in soles])
    if abs(f-.5)<1e-5 or abs(f-7/30)<1e-5 or f==1:frames[clip+('_mid' if abs(f-.5)<1e-5 else '_peak' if f<1 else '_end')]=sv
   qs=np.asarray(qs,dtype='f4');ti=add(t.astype('f4'),'SCALAR',5126);sam=[];channels=[]
@@ -164,7 +190,10 @@ def run(src,out,texture=False):
   gltf['animations'].append({'name':clip,'samplers':sam,'channels':channels});reports[clip]={'amplitude':gain,'frames':31,'p99_edge_ratio_max':float(max(rat)),'max_motion':float(max(moved)),'accepted':bool(max(rat)<1.5 and max(moved)>.01)}
   reports[clip]['max_floor_error']=max(abs(value) for value in floor)
   if clip=='walk' and all(len(sole) for sole in soles):
+   reports[clip]['stance_horizontal_error_over_height']=max(contact_error,default=None)
    traces=np.asarray(sole_traces);reports[clip]['sole_horizontal_excursion_over_height']=[float(np.linalg.norm(np.ptp(traces[:,i][:,[0,2]],axis=0))/h) for i in (0,1)]
  gltf.update(bufferViews=views,accessors=acc,buffers=[{'byteLength':len(data)}]);jb=json.dumps(gltf,separators=(',',':')).encode();jb+=b' '*((-len(jb))%4);data.extend(b'\0'*((-len(data))%4));(out/'robot_rig_candidate.glb').write_bytes(struct.pack('<4sII',b'glTF',2,28+len(jb)+len(data))+struct.pack('<I4s',len(jb),b'JSON')+jb+struct.pack('<I4s',len(data),b'BIN\0')+data)
- report={'experimental':True,'joints':26,'triangles':len(m.faces),'neck_height':float(neck),'joint_positions':dict(zip(NAMES,P.tolist())),'rest_error':float(np.max(np.abs(skin(identity)-v))),'clips':reports,'note':'Adaptive bilateral section prototype, no universal rig or visual approval.'};(out/'report.json').write_text(json.dumps(report,indent=2));np.savez_compressed(out/'poses.npz',vertices=v,faces=m.faces,colors=m.visual.vertex_colors,joints=P,parents=PARENT,**frames);print(json.dumps(report['clips'],indent=2))
-if __name__=='__main__':run(sys.argv[1],sys.argv[2],texture='--texture' in sys.argv[3:])
+ report={'experimental':True,'recentered':recentered,'joints':26,'triangles':len(m.faces),'neck_height':float(neck),'joint_positions':dict(zip(NAMES,P.tolist())),'rest_error':float(np.max(np.abs(skin(identity)-v))),'clips':reports,'note':'Adaptive bilateral section prototype, no universal rig or visual approval.'};(out/'report.json').write_text(json.dumps(report,indent=2))
+ if save_poses:np.savez_compressed(out/'poses.npz',vertices=v,faces=m.faces,colors=m.visual.vertex_colors,joints=P,parents=PARENT,**frames)
+ print(json.dumps(report['clips'],indent=2))
+if __name__=='__main__':run(sys.argv[1],sys.argv[2],texture='--texture' in sys.argv[3:],save_poses='--no-poses' not in sys.argv[3:])

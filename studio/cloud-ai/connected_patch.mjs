@@ -67,5 +67,5 @@ edit('</head>', '<!-- '+read('MODEL_VIEWER_LICENSE.txt').replaceAll('--','—')+
 edit('<div id="panelNav">','<button id="quickAi" aria-label="Yapay zekâ araçları">AI / 3D</button><div id="panelNav">');
 edit('<body>','<body>'+read('rig_dialog.html'));
 edit('</script></body></html>',read('rig_viewer.js')+'\n</script></body></html>');
-h=h.replaceAll(/(Forge Studio |FORGE |Forge )R70\.(17|29)/g,'$1R70.33');
-for(const file of ['Forge_R70_33_Studio.html','Forge_R70_29_AI_Connected.html']) fs.writeFileSync(file,h);
+h=h.replaceAll(/(Forge Studio |FORGE |Forge )R70\.(17|29)/g,'$1R70.34');
+for(const file of ['Forge_R70_34_Studio.html','Forge_R70_29_AI_Connected.html']) fs.writeFileSync(file,h);

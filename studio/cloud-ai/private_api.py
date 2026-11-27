@@ -36,7 +36,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Origin") not in ORIGINS:self.respond(403,{"error":"origin not permitted"});return
         self.send_response(204);self.cors();self.send_header("Access-Control-Allow-Methods","POST, GET, OPTIONS");self.send_header("Access-Control-Allow-Headers","Authorization, Content-Type");self.send_header("Content-Length","0");self.end_headers()
     def do_GET(self):
-        if self.path=="/health":self.respond(200,{"service":"forge-triposr-cpu","busy":LOCK.locked()})
+        if self.path=="/health":self.respond(200,{"service":"forge-triposr-cpu","version":"R70.34","busy":LOCK.locked()})
         else:self.respond(404,{"error":"not found"})
     def do_POST(self):
         self.connection.settimeout(20)
@@ -64,7 +64,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path=="/v1/generate-rig":
                     mesh=path/"result/relaxed.glb"
                     if not mesh.exists():mesh=path/"result/generated.glb"
-                    proc=subprocess.run([sys.executable,str(ROOT/"rig_adaptive.py"),str(mesh),str(path/"rig"),"--texture"],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=100)
+                    proc=subprocess.run([sys.executable,str(ROOT/"rig_adaptive.py"),str(mesh),str(path/"rig"),"--texture","--no-poses"],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=100)
                     if proc.returncode:
                         self.respond(422,{"error":"Bu model için iskelet oluşturulamadı. Statik üretimi kullanabilirsin."});return
                     rig=path/"rig"
