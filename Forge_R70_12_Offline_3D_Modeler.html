@@ -1691,6 +1691,29 @@ function sourceModel(style){
 }
 function sourceParts(style){return Array.from(sourceModel(style),([name,q])=>({type:"reference",style,name,t:q.center.map(v=>v*1.32),s:[1.32,1.32,1.32],r:[0,0,0],color:"#ffffff",mirror:false}))}
 function validPart(p){return !!(p&&typeof p.type==="string"&&/^#[0-9a-f]{6}$/i.test(p.color)&&["t","s","r"].every(k=>Array.isArray(p[k])&&p[k].length===3&&p[k].every(v=>typeof v==="number"&&Number.isFinite(v)&&Math.abs(v)<=(k==="r"?360:10)&&(k!=="s"||v>=.02)))&&(p.type==="reference"?["knight","ranger","guardian","anatomy"].includes(p.style)&&typeof p.name==="string"&&sourceModel(p.style).has(p.name)&&(!("mirror" in p)||typeof p.mirror==="boolean")&&(!("sculpt" in p)||validStrokes(p.sculpt)):["box","sphere","cylinder","cone","torso","head","arm","leg","palm","boot","plate"].includes(p.type)&&(!("profile" in p)||(Object.hasOwn(PROFILES,p.type)&&validProfile(p.profile)))))}
+/*
+MIT License
+
+Copyright (c) 2019 Stéphane GINIER
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
 // Radial inflate falloff adapted from SculptGL Inflate.js (MIT; full license in vendor/sculptgl/LICENSE).
 // Operates on an isolated copy of selected indexed geometry; source assets remain immutable.
 function validStrokes(a){return Array.isArray(a)&&a.length<=32&&a.every(s=>s&&Array.isArray(s.center)&&s.center.length===3&&s.center.every(x=>typeof x==="number"&&Number.isFinite(x)&&x>=0&&x<=1)&&typeof s.radius==="number"&&s.radius>=.05&&s.radius<=.5&&typeof s.strength==="number"&&Number.isFinite(s.strength)&&Math.abs(s.strength)<=1)}
