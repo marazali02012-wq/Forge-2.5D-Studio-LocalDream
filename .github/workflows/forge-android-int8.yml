@@ -68,9 +68,10 @@ jobs:
           javac -cp ort.jar -d java-classes experiments/android-int8/app/src/main/java/com/forgestudio/mobileprobe/Engine.java experiments/android-int8/test/DesktopProbe.java
           read RADIUS THRESHOLD < <(python -c 'import json;d=json.load(open("android-probe-data/models/triposr-decoder-meta.json"))["params"];print(d["radius"],d["density_threshold"])')
           java -Xmx512m -Djava.awt.headless=true -cp ort.jar:java-classes com.forgestudio.mobileprobe.DesktopProbe android-probe-data java-proof-output "$RADIUS" "$THRESHOLD"
-          pip install trimesh==4.9.0 numpy==2.2.6 matplotlib==3.10.7
+          pip install trimesh==4.9.0 numpy==2.2.6 matplotlib==3.10.7 scipy==1.15.3
           python experiments/android-int8/test/inspect_glb.py java-proof-output
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Forge-Java-Real-Model-Proof
           path: java-proof-output/
