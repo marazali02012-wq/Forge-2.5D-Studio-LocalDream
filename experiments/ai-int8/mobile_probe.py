@@ -40,16 +40,16 @@ MODE=os.environ.get("FORGE_MODE","lean"); THREADS=int(os.environ.get("FORGE_THRE
 if "--prepare" in sys.argv: sys.exit(0)
 def opts(encoder=False):
  s=ort.SessionOptions();s.intra_op_num_threads=THREADS;s.inter_op_num_threads=1;s.enable_cpu_mem_arena=False;s.enable_mem_pattern=False
- if encoder and MODE in ("lean","ort"):
+ if encoder and MODE in ("lean","ort","raw","ortfile"):
   s.add_session_config_entry("session.disable_prepacking","1")
-  s.graph_optimization_level=ort.GraphOptimizationLevel.ORT_DISABLE_ALL if MODE=="ort" else ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+  s.graph_optimization_level=ort.GraphOptimizationLevel.ORT_DISABLE_ALL if MODE in ("ort","raw","ortfile") else ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
   if MODE=="ort":
    s.add_session_config_entry("session.use_ort_model_bytes_directly","1")
    s.add_session_config_entry("session.use_ort_model_bytes_for_initializers","1")
  return s
 start=time.monotonic()
 model=MODELS/"triposr-encoder-int8.onnx"
-model_input=(model.with_suffix(".ort").read_bytes() if MODE=="ort" else str(model))
+model_input=(model.with_suffix(".ort").read_bytes() if MODE=="ort" else str(model.with_suffix(".ort")) if MODE=="ortfile" else str(model))
 enc=ort.InferenceSession(model_input,sess_options=opts(True),providers=["CPUExecutionProvider"])
 load_rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
 planes=enc.run(None,{enc.get_inputs()[0].name:x})[0]
