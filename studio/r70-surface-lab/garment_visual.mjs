@@ -13,7 +13,7 @@ function cross(a,b,c,pos){
  const u=[0,1,2].map(k=>pos[b*3+k]-pos[a*3+k]),v=[0,1,2].map(k=>pos[c*3+k]-pos[a*3+k]);
  return [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
 }
-function analyze(q){
+function analyze(q,p){
  const a=new Float32Array(q.position),ix=new Uint32Array(q.index),old=new Float32Array(q.normal);
  const ap=p._malloc(a.byteLength),ip=p._malloc(ix.byteLength);
  if(!ap||!ip){if(ap)p._free(ap);if(ip)p._free(ip);throw Error('allocation failed')}
@@ -54,12 +54,46 @@ try{
  await views('before');
  const pieces=await page.evaluate(()=>[...sourceModel('anatomy')].filter(([name])=>name.startsWith('outfit.')).map(([name,q])=>({name,position:[...q.m.position],index:[...q.m.index],normal:[...q.m.normal]})));
  assert.equal(pieces.length,7);
- const results=pieces.map(analyze);
+ const nodeResults=pieces.map(q=>analyze(q,p));
+ // Load the same self-contained WASM build inside the offline browser.
+ // Each CJS bundle is scoped independently; only its factory is exposed.
+ for(const [file,key] of [['forge_pmp.cjs','__forgePmpFactory'],['forge_mc33.cjs','__forgeMcFactory']]){
+  const code=fs.readFileSync(path.join(base,'build',file),'utf8');
+  await page.addScriptTag({content:'(()=>{const module={exports:{}};const exports=module.exports;\n'+code+'\n;globalThis.'+key+'=module.exports;})();'});
+ }
+ await page.addScriptTag({content:cross.toString()+'\n'+analyze.toString()+'\n;globalThis.__forgeAnalyze=analyze;'});
+ const start=Date.now();
+ const result=await page.evaluate(async pieces=>{
+  const t0=performance.now(),p=await globalThis.__forgePmpFactory(),m=await globalThis.__forgeMcFactory();
+  const initMs=performance.now()-t0,t1=performance.now();
+  const results=pieces.map(q=>globalThis.__forgeAnalyze(q,p));
+  const smoothMs=performance.now()-t1;
+  const n=24,d=new Float32Array(n*n*n);
+  for(let z=0,k=0;z<n;z++)for(let y=0;y<n;y++)for(let x=0;x<n;x++,k++)d[k]=(x-11.5)**2+(y-11.5)**2+(z-11.5)**2-64;
+  const dp=m._malloc(d.byteLength);if(!dp)throw Error('MC33 allocation failed');
+  let mc;
+  try{
+   m.HEAPF32.set(d,dp/4);const t2=performance.now(),code=m._forge_mc_extract(dp,n,n,n,0);
+   const vertices=m._forge_mc_vertices(),triangles=m._forge_mc_triangles();
+   const ix=m.HEAPU32.slice(m._forge_mc_indices()/4,m._forge_mc_indices()/4+3*triangles);
+   const pos=m.HEAPF32.slice(m._forge_mc_positions()/4,m._forge_mc_positions()/4+3*vertices);
+   const edges=new Map();
+   for(let i=0;i<ix.length;i+=3)for(let j=0;j<3;j++){let a=ix[i+j],b=ix[i+(j+1)%3],key=a<b?a+':'+b:b+':'+a;edges.set(key,(edges.get(key)||0)+1)}
+   mc={code,vertices,triangles,finite:pos.every(Number.isFinite),validIndices:ix.every(x=>x<vertices),closedEdges:[...edges.values()].every(x=>x===2),extractMs:performance.now()-t2};
+  }finally{m._forge_mc_clear();m._free(dp)}
+  return {results,mc,initMs,smoothMs,heapBytes:{pmp:p.HEAPF32.buffer.byteLength,mc33:m.HEAPF32.buffer.byteLength}};
+ },pieces);
+ const {results,mc,initMs,smoothMs,heapBytes}=result;
+ assert.equal(mc.code,0);assert.ok(mc.vertices>0&&mc.triangles>0&&mc.finite&&mc.validIndices&&mc.closedEdges);
+ // Both runs execute the same WASM; compare acceptance and actual position data.
+ assert.equal(results.length,nodeResults.length);
+ for(let i=0;i<results.length;i++){assert.equal(results[i].accepted,nodeResults[i].accepted);if(results[i].accepted)assert.deepEqual(results[i].position,nodeResults[i].position)}
+ const browserWasm={mc,initMs,smoothMs,heapBytes,roundTripMs:Date.now()-start,parity:true};
  await page.evaluate(results=>{const src=sourceModel('anatomy');for(const q of results)if(q.accepted){const m=src.get(q.name).m;m.position.set(q.position);m.normal.set(q.normal)}refresh()},results);
  await views('after');
  const model=await page.evaluate(()=>({triangles:mesh(parts).pos.length/9,rendered:three.renderer.info.render.triangles,parts:parts.length}));
  assert.equal(model.triangles,model.rendered);assert.equal(model.parts,10);assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);
- const report={model,errors,requests,acceptedParts:results.filter(x=>x.accepted).length,parts:results.map(({position,normal,...r})=>r),note:'Node WASM + offline Chromium visual comparison; not device/browser WASM benchmark, not self-intersection proof or visual acceptance.'};
+ const report={model,errors,requests,browserWasm,acceptedParts:results.filter(x=>x.accepted).length,parts:results.map(({position,normal,...r})=>r),note:'Node and offline Chromium WASM parity plus visual comparison. Desktop headless timings and WASM heap, not physical Android performance; not self-intersection proof or visual acceptance.'};
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
  // Fail when the real input cannot be safely processed, but retain visual evidence.
  assert.ok(report.acceptedParts>0,'No garment passed geometric guards');
