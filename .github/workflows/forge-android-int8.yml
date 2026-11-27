@@ -1,4 +1,4 @@
-name: Forge native Android INT8 proof
+name: Forge native Android INT8 cleanup and preview
 on:
   push:
     branches: [forge-ai-int8-proof]
@@ -65,7 +65,7 @@ jobs:
           bash experiments/android-int8/fetch_assets.sh android-probe-data full
           curl -fL --retry 2 -o ort.jar https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime/1.23.2/onnxruntime-1.23.2.jar
           mkdir -p java-classes java-proof-output
-          javac -cp ort.jar -d java-classes experiments/android-int8/app/src/main/java/com/forgestudio/mobileprobe/Engine.java experiments/android-int8/test/DesktopProbe.java
+          javac -cp ort.jar -d java-classes experiments/android-int8/app/src/main/java/com/forgestudio/mobileprobe/Engine.java experiments/android-int8/app/src/main/java/com/forgestudio/mobileprobe/Preview.java experiments/android-int8/test/DesktopProbe.java
           read RADIUS THRESHOLD < <(python -c 'import json;d=json.load(open("android-probe-data/models/triposr-decoder-meta.json"))["params"];print(d["radius"],d["density_threshold"])')
           java -Xmx512m -Djava.awt.headless=true -cp ort.jar:java-classes com.forgestudio.mobileprobe.DesktopProbe android-probe-data java-proof-output "$RADIUS" "$THRESHOLD"
           pip install trimesh==4.9.0 numpy==2.2.6 matplotlib==3.10.7 scipy==1.15.3
