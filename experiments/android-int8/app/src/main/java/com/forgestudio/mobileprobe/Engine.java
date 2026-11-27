@@ -48,9 +48,13 @@ public final class Engine {
     System.arraycopy(d,0,density,offset,len);
     if(offset%(4096*8)==0)log.accept("3D alan: "+(100*offset/count)+"%");
    }
-   mesh=extract(density,n,radius,iso);
+   if("mc33".equals(System.getProperty("forge.surface","mc33"))&&NativeSurface.AVAILABLE){
+    try{mesh=NativeSurface.run(density,n,radius,iso);mesh.surface="mc33";}
+    catch(RuntimeException ex){log.accept("MC33 reddedildi: "+ex.getMessage());mesh=extract(density,n,radius,iso);mesh.surface="tetra-fallback";}
+   }else{mesh=extract(density,n,radius,iso);mesh.surface="tetra";}
+   String method=mesh.surface;
    int beforeCleanup=mesh.f.size();
-   mesh=clean(mesh,2*radius/(n-1));
+   mesh=clean(mesh,2*radius/(n-1));mesh.surface=method;
    log.accept("Yuzey temizleme: "+beforeCleanup+" -> "+mesh.f.size()+" ucgen; yumusatma "+mesh.smoothingWeight);
    if(mesh.f.size()<100||mesh.v.size()<30)throw new IOException("Yeterli 3D yuzey bulunamadi");
    for(int a=0;a<mesh.v.size();a+=4096){int len=Math.min(4096,mesh.v.size()-a);float[] points=new float[len*3];for(int i=0;i<len;i++)System.arraycopy(mesh.v.get(a+i),0,points,i*3,3);float[] c=decode(env,s,p,points,"color");if(c.length!=len*3)throw new IOException("Renk boyutu");for(int i=0;i<len;i++){float[] rgb=Arrays.copyOfRange(c,i*3,i*3+3);for(int j=0;j<3;j++){if(!Float.isFinite(rgb[j]))throw new IOException("Renk NaN");rgb[j]=Math.max(0,Math.min(1,rgb[j]));}mesh.c.add(rgb);}}
@@ -73,7 +77,7 @@ public final class Engine {
  public static final class Mesh{
   public final ArrayList<float[]> v=new ArrayList<>(),c=new ArrayList<>();
   public final ArrayList<int[]> f=new ArrayList<>();
-  public long elapsedMs,hwmMiB; public float smoothingWeight; public int removedFaces;
+  public long elapsedMs,hwmMiB; public String surface="tetra"; public float smoothingWeight; public int removedFaces;
  }
  // Remove only very small disconnected pieces; preserve substantial separate geometry.
  static int root(int[] p,int a){while(p[a]!=a){p[a]=p[p[a]];a=p[a];}return a;}
