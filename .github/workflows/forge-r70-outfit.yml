@@ -1,0 +1,37 @@
+name: Forge R70.17 fitted outfit verification
+on:
+  push:
+    branches: [forge-r70-anatomy]
+    paths: ['.github/workflows/forge-r70-outfit.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts playwright@1.56.1
+      - run: npx playwright install chromium
+      - run: node studio/r70-reference/patch_r70_17.mjs
+      - run: node studio/r70-reference/build_test_r70_17.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Forge-R70-17
+          path: |
+            Forge_R70_17_Offline_3D_Modeler.html
+            studio/r70-reference/R70_17_*.png
+            studio/r70-reference/R70_17_browser.json
+            studio/r70-reference/R70_17_visual.json
+      - name: Save verified preview build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add studio/r70-reference/Forge_R70_17_template.html studio/r70-reference/R70_17_geometry.json Forge_R70_17_Offline_3D_Modeler.html studio/r70-reference/R70_17_*.png studio/r70-reference/R70_17_browser.json studio/r70-reference/R70_17_visual.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "R70.17 tested offline Three.js preview"
+          git push origin HEAD:forge-r70-anatomy
