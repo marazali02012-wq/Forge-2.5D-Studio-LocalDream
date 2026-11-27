@@ -1,0 +1,51 @@
+name: R70.35 real plantar contact regression comparison
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/r70_35/**','.github/workflows/forge-r70-contact.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-r70-29-connected
+          run-id: 46063443596
+          github-token: ${{ github.token }}
+          path: inputs/robot
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-r70-31-knight
+          run-id: 46064645098
+          github-token: ${{ github.token }}
+          path: inputs/knight
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 pillow==10.4.0
+      - run: OPENBLAS_NUM_THREADS=2 python verification/r70_35/compare_contact.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+      - run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';import assert from 'node:assert/strict';
+          const report={};for(const name of ['robot','knight'])for(const mode of ['baseline','candidate']){
+           const f='r70-35-qa/'+name+'/'+mode+'/robot_rig_candidate.glb';
+           const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(f)));
+           report[name+'/'+mode]={errors:v.issues.numErrors,warnings:v.issues.numWarnings};assert.equal(v.issues.numErrors,0);assert.equal(v.issues.numWarnings,0);
+          }
+          fs.writeFileSync('r70-35-qa/validation.json',JSON.stringify(report,null,2));
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-r70-35-contact-qa
+          path: r70-35-qa/

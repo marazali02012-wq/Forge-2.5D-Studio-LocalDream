@@ -1,4 +1,4 @@
-import sys, json, struct, pathlib
+import sys, json, struct, pathlib, os
 import numpy as np, trimesh
 from scipy.spatial.transform import Rotation
 from scipy.sparse import coo_matrix,diags
@@ -165,7 +165,68 @@ def run(src,out,texture=False,save_poses=True):
      lengths=np.linalg.norm(peak[edges[:,0]]-peak[edges[:,1]],axis=1)
      strain.append(np.quantile(lengths[mask]/rest[mask],.99))
     if max(strain)<1.5:break
-  for f in t/dur:
+  # Experimental R70.35: compare actual skinned plantar surface, not
+  # the algebraic offset that was used to place it.
+  contact_report=None;selected_contact=None
+  if clip=='walk' and os.getenv('FORGE_CONTACT_QA')=='1':
+   from scipy.spatial.transform import Slerp
+   # Use each foot's own lower 30% of the vertices in the original
+   # low band; exclude unweighted nearby accessories.
+   feet=[]
+   for side,chain in [(-1,[20,21]),(1,[16,17])]:
+    influence=np.sum(wt*np.isin(ids,chain),axis=1)
+    cand=np.flatnonzero((side*(v[:,0]-cx)>0)&(y<.09*h)&(influence>.45))
+    feet.append(cand[y[cand]<=np.quantile(y[cand],.30)] if len(cand)>=12 else np.array([],dtype=int))
+   if all(len(a)>=8 for a in feet):
+    def build(mode):
+     keys=[];offsets=[]
+     for f in t/dur:
+      phase=np.sin(f*2*np.pi);ang=pose_angles(f)*gain
+      # The extended leg is the support leg. Compensate ankle pitch
+      # against its hip/knee flexion; try full and blended compensation.
+      stance=0 if phase>=0 else 1
+      if mode:
+       for side,k in [(0,18),(1,14)]:
+        factor=(1. if side==stance else .35) if mode==1 else 1.
+        ang[k+2,0]=-(ang[k,0]+ang[k+1,0])*factor
+      q=Rotation.from_euler('xyz',ang,degrees=True).as_quat();sv=skin(q)
+      tr=np.array([0.,-sv[:,1].min(),0.])
+      if mode==0:
+       old_stance=1 if phase>=0 else 0
+       sole=soles[old_stance]
+      else:sole=feet[stance]
+      if len(sole):
+       delta=(v[sole]-sv[sole]).mean(0)
+       tr[[0,2]]=delta[[0,2]]*min(abs(phase)*4,1.)
+      keys.append(q);offsets.append(tr)
+     return np.asarray(keys),np.asarray(offsets)
+    def evaluate(key,offset):
+     sample=np.linspace(0,dur,121)
+     interp=np.stack([Slerp(t,Rotation.from_quat(key[:,j]))(sample).as_quat() for j in range(26)],axis=1)
+     trans=np.stack([np.interp(sample,t,offset[:,k]) for k in range(3)],axis=1)
+     drift=[];tilt=[];gaps=[];strains=[];motions=[];floor_errors=[]
+     for f,q,tr in zip(sample/dur,interp,trans):
+      sv=skin(q)+tr
+      phase=np.sin(f*2*np.pi);stance=0 if phase>=0 else 1
+      if abs(phase)>=.5:
+       sole=feet[stance];delta=sv[sole]-v[sole]
+       drift.append(np.linalg.norm(delta.mean(0)[[0,2]])/h)
+       tilt.append(np.std(delta[:,1])/h)
+       gaps.append(max(0.,float(np.min(sv[sole,1])))/h)
+      floor_errors.append(abs(float(sv[:,1].min()))/h)
+      lengths=np.linalg.norm(sv[edges[:,0]]-sv[edges[:,1]],axis=1)
+      strains.append(float(np.quantile(lengths[mask]/rest[mask],.99)))
+      motions.append(float(np.max(np.linalg.norm(sv-v,axis=1))/h))
+     return dict(samples=121,drift=float(np.mean(drift)),tilt=float(np.mean(tilt)),gap=float(np.mean(gaps)),floor=max(floor_errors),strain=max(strains),motion=max(motions))
+    variants=[build(i) for i in range(3)]
+    metrics=[evaluate(*item) for item in variants];base=metrics[0]
+    score=lambda m:m['drift']+m['tilt']+m['gap']
+    allowed=[i for i in (1,2) if metrics[i]['strain']<1.5 and metrics[i]['motion']>=.70*base['motion'] and metrics[i]['floor']<=max(.006,base['floor']*1.10) and metrics[i]['gap']<=base['gap']+.001 and metrics[i]['tilt']<=base['tilt']+.001 and score(metrics[i])<.85*score(base)]
+    chosen=min(allowed,key=lambda i:score(metrics[i])) if allowed else 0
+    selected_contact=variants[chosen]
+    contact_report={'selected':chosen,'baseline':base,'candidates':metrics[1:],'foot_vertices':[len(a) for a in feet]}
+   else:contact_report={'selected':0,'reason':'insufficient reliable plantar vertices'}
+  for frame_index,f in enumerate(t/dur):
    ang=pose_angles(f)*gain
    q=Rotation.from_euler('xyz',ang,degrees=True).as_quat();sv=skin(q)
    tr=np.array([0,-sv[:,1].min(),0])
@@ -179,6 +240,8 @@ def run(src,out,texture=False,save_poses=True):
     blend=min(abs(phase)*4,1.)
     tr[[0,2]]=offset[[0,2]]*blend
     if blend==1.:contact_error.append(float(np.linalg.norm((offset-tr)[[0,2]])/h))
+   if selected_contact is not None:
+    q=selected_contact[0][frame_index];tr=selected_contact[1][frame_index];sv=skin(q)
    sv+=tr;qs.append(q);ts.append(tr);r=np.linalg.norm(sv[edges[:,0]]-sv[edges[:,1]],axis=1)[mask]/rest[mask];rat.append(np.quantile(r,.99));moved.append(np.max(np.linalg.norm(sv-v,axis=1)))
    floor.append(float(sv[:,1].min()));sole_traces.append([sv[sole].mean(0) if len(sole) else [np.nan]*3 for sole in soles])
    if abs(f-.5)<1e-5 or abs(f-7/30)<1e-5 or f==1:frames[clip+('_mid' if abs(f-.5)<1e-5 else '_peak' if f<1 else '_end')]=sv
@@ -188,8 +251,9 @@ def run(src,out,texture=False,save_poses=True):
    sam.append({'input':ti,'output':add(qs[:,j].copy(),'VEC4',5126),'interpolation':'LINEAR'});channels.append({'sampler':len(sam)-1,'target':{'node':j,'path':'rotation'}})
   sam.append({'input':ti,'output':add(np.asarray(ts+P[0],dtype='f4'),'VEC3',5126),'interpolation':'LINEAR'});channels.append({'sampler':len(sam)-1,'target':{'node':0,'path':'translation'}})
   gltf['animations'].append({'name':clip,'samplers':sam,'channels':channels});reports[clip]={'amplitude':gain,'frames':31,'p99_edge_ratio_max':float(max(rat)),'max_motion':float(max(moved)),'accepted':bool(max(rat)<1.5 and max(moved)>.01)}
+  if contact_report is not None:reports[clip]['contact_r7035']=contact_report
   reports[clip]['max_floor_error']=max(abs(value) for value in floor)
-  if clip=='walk' and all(len(sole) for sole in soles):
+  if clip=='walk' and all(len(sole) for sole in soles) and selected_contact is None:
    reports[clip]['stance_horizontal_error_over_height']=max(contact_error,default=None)
    traces=np.asarray(sole_traces);reports[clip]['sole_horizontal_excursion_over_height']=[float(np.linalg.norm(np.ptp(traces[:,i][:,[0,2]],axis=0))/h) for i in (0,1)]
  gltf.update(bufferViews=views,accessors=acc,buffers=[{'byteLength':len(data)}]);jb=json.dumps(gltf,separators=(',',':')).encode();jb+=b' '*((-len(jb))%4);data.extend(b'\0'*((-len(data))%4));(out/'robot_rig_candidate.glb').write_bytes(struct.pack('<4sII',b'glTF',2,28+len(jb)+len(data))+struct.pack('<I4s',len(jb),b'JSON')+jb+struct.pack('<I4s',len(data),b'BIN\0')+data)
