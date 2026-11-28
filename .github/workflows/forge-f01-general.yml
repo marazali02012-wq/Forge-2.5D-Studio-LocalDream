@@ -26,6 +26,43 @@ jobs:
       - run: pip check
       - name: Actual inference, reimport and four angle render
         run: PYTHONPATH=/tmp/triposr OPENBLAS_NUM_THREADS=2 FORGE_CPU_THREADS=4 python verification/f01/general_static_qa.py
+      - name: Real authenticated standard and high-detail static API
+        run: |
+          export FORGE_API_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$FORGE_API_TOKEN"
+          export PYTHONPATH=/tmp/triposr OPENBLAS_NUM_THREADS=2 FORGE_CPU_THREADS=4
+          python studio/cloud-ai/private_api.py > /tmp/f01-api.log 2>&1 &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8765/health && break; sleep 1; done
+          python - <<'PY'
+          import io,json,os,pathlib,struct,time,urllib.request,urllib.error
+          from PIL import Image
+          out=pathlib.Path('f01-evidence/api');out.mkdir(parents=True,exist_ok=True)
+          image=pathlib.Path('/tmp/triposr/examples/chair.png').read_bytes()
+          token=os.environ['FORGE_API_TOKEN']
+          def post(path,body=image,auth=True):
+              headers={'Content-Type':'image/png'}
+              if auth:headers['Authorization']='Bearer '+token
+              req=urllib.request.Request('http://127.0.0.1:8765'+path,data=body,headers=headers)
+              try:
+                  with urllib.request.urlopen(req,timeout=360) as r:return r.status,r.read()
+              except urllib.error.HTTPError as r:return r.code,r.read()
+          assert post('/v1/generate?resolution=192',auth=False)[0]==401
+          assert post('/v1/generate?resolution=256')[0]==400
+          empty=io.BytesIO();Image.new('RGBA',(32,32),(0,0,0,0)).save(empty,format='PNG')
+          assert post('/v1/generate?resolution=192',empty.getvalue())[0]==400
+          result={}
+          for res,path in [(128,'/v1/generate'),(192,'/v1/generate?resolution=192')]:
+              t=time.monotonic();status,data=post(path);assert status==200,(status,data[:200])
+              assert struct.unpack_from('<4sII',data)==(b'glTF',2,len(data))
+              j=json.loads(data[20:20+struct.unpack_from('<I',data,12)[0]])
+              assert not j.get('skins') and not j.get('animations')
+              p=j['meshes'][0]['primitives'][0];n=j['accessors'][p['indices']]['count']//3
+              result[str(res)]={'triangles':n,'bytes':len(data),'seconds':time.monotonic()-t}
+              (out/(str(res)+'.glb')).write_bytes(data)
+          assert result['192']['triangles']>result['128']['triangles'],result
+          (out/'report.json').write_text(json.dumps(result,indent=2));print(result)
+          PY
       - uses: actions/setup-node@v4
         if: always()
         with:
@@ -37,9 +74,9 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';import validator from 'gltf-validator';
-          const names=['chair','horse','teapot','house','seated_scene','robot_regression','chair_hd'],out={};
+          const names=['chair','horse','teapot','house','seated_scene','robot_regression','chair_hd','api/128','api/192'],out={};
           for(const n of names){
-            const path='f01-evidence/'+n+'/generated.glb';
+            const path=n.startsWith('api/')?'f01-evidence/'+n+'.glb':'f01-evidence/'+n+'/generated.glb';
             if(!fs.existsSync(path)){out[n]={missing:true};continue;}
             const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(path)));
             out[n]={errors:v.issues.numErrors,warnings:v.issues.numWarnings,messages:v.issues.messages};
