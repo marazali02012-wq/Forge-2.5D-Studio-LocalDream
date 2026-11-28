@@ -72,7 +72,9 @@ class Kaggle:
         # Each slug belongs to exactly one version. The version-label endpoint
         # has returned HTTP 404 even for a valid version during reconciliation.
         data = self.rpc(KERNELS, "GetKernelSessionStatus", self.target(slug))
-        status = data.get("status")
+        # kagglesdk serializes proto3 defaults by omission: a successful reply
+        # without "status" is KernelWorkerStatus.QUEUED (0), not a lost job.
+        status = data.get("status", 0)
         states = ("QUEUED", "RUNNING", "COMPLETE", "ERROR",
                   "CANCEL_REQUESTED", "CANCEL_ACKNOWLEDGED", "NEW_SCRIPT")
         if type(status) is int and 0 <= status < len(states):
@@ -86,7 +88,13 @@ class Kaggle:
         if self.status(self.existing) not in TERMINAL:
             return False
         quota = self.rpc(KERNELS, "GetAcceleratorQuotaStatistics", {}).get("gpuQuota")
-        if not isinstance(quota, dict) or quota.get("isPayToScaleEnabled") is not False:
+        if not isinstance(quota, dict) or not isinstance(quota.get("totalTimeAllowed"), str):
+            return False
+        # ApiAcceleratorQuota.isPayToScaleEnabled is a non-optional bool whose
+        # default (False) kagglesdk omits. Absence in a quota reply that carries
+        # the required allowance is therefore "free only"; any explicit value
+        # other than the JSON literal false still fails closed.
+        if quota.get("isPayToScaleEnabled", False) is not False:
             return False
 
         def seconds(value):

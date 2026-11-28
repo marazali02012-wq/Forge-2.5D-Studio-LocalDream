@@ -165,9 +165,14 @@ class BridgeTest(unittest.TestCase):
             with self.subTest(paid=value):
                 simulate("COMPLETE", {**baseline, "isPayToScaleEnabled": value})
                 self.assertFalse(provider.admission())
+        # Live 2026-11-28 reply shape: the default False is omitted by kagglesdk.
         simulate("COMPLETE", baseline)
+        self.assertTrue(provider.admission())
+        simulate("COMPLETE", {"timeUsed": "4200s"})
         self.assertFalse(provider.admission())
-        for state in ("QUEUED", "RUNNING", "CANCEL_REQUESTED", None):
+        simulate("COMPLETE", None)
+        self.assertFalse(provider.admission())
+        for state in ("QUEUED", "RUNNING", "CANCEL_REQUESTED", 0, "UNKNOWN"):
             simulate(state, {**baseline, "isPayToScaleEnabled": False})
             self.assertFalse(provider.admission())
         simulate("COMPLETE", {**baseline, "isPayToScaleEnabled": False})
@@ -178,8 +183,10 @@ class BridgeTest(unittest.TestCase):
     def test_kaggle_rpc_status_and_binary_integrity(self):
         provider = Kaggle("fixture", "KGAT_fixture", "existing")
         provider.rpc = lambda *_: {}
-        self.assertEqual(provider.status("existing"), "unreported")
+        self.assertEqual(provider.status("existing"), "queued")
         self.assertFalse(provider.admission())
+        provider.rpc = lambda *_: {"status": "SOMETHING_NEW"}
+        self.assertEqual(provider.status("existing"), "unreported")
         provider.rpc = lambda *_: {"status": 0}
         self.assertEqual(provider.status("existing"), "queued")
         provider.rpc = lambda *_: {"status": 3}
