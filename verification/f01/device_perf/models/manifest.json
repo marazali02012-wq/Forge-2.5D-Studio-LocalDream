@@ -12,5 +12,19 @@
   "encoding": "base64",
   "triangles": 59014,
   "sha256": "8015b716bd1297f945df0849d37d1cb3b66d96c7d3a96c6c08c74cf66a8b26aa"
+ },
+ {
+  "name": "Kafe · HARD10 mobil",
+  "file": "models/cafe-mobile.glb.b64.txt",
+  "encoding": "base64",
+  "triangles": 58620,
+  "sha256": "2884005e2c93cefb534a80170eb6e2ca842dcd23f0c803fd44a638fd88f94b2e"
+ },
+ {
+  "name": "Zırh · HARD10 mobil",
+  "file": "models/armor-mobile.glb.b64.txt",
+  "encoding": "base64",
+  "triangles": 59000,
+  "sha256": "56ad732537a76cf130dd51a193d89fc41b3fb1e35bb0ef71c1e6a8b24da204e5"
  }
 ]
