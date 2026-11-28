@@ -30,7 +30,20 @@ def main():
     # Resolve and record exact model revision; use only public safetensors.
     revision=HfApi().model_info("openai/shap-e").sha
     t=time.monotonic()
-    pipe=ShapEPipeline.from_pretrained("openai/shap-e",revision=revision,variant="fp16",use_safetensors=True,torch_dtype=torch.float32,low_cpu_mem_usage=True).to("cpu")
+    # The upstream model index has duplicate renderer aliases. Load the
+    # actual published safetensors components explicitly; never load pickle.
+    from huggingface_hub import snapshot_download
+    from diffusers import PriorTransformer,HeunDiscreteScheduler
+    from diffusers.pipelines.shap_e.renderer import ShapERenderer
+    from transformers import CLIPTextModelWithProjection,CLIPTokenizer
+    base=pathlib.Path(snapshot_download("openai/shap-e",revision=revision,allow_patterns=["prior/config.json","prior/*.safetensors","renderer/config.json","renderer/*.safetensors","text_encoder/config.json","text_encoder/*.safetensors","tokenizer/*.json","tokenizer/*.txt","scheduler/*.json"]))
+    opts=dict(variant="fp16",use_safetensors=True,torch_dtype=torch.float32,local_files_only=True)
+    prior=PriorTransformer.from_pretrained(base/"prior",**opts)
+    renderer=ShapERenderer.from_pretrained(base/"renderer",**opts)
+    encoder=CLIPTextModelWithProjection.from_pretrained(base/"text_encoder",**opts)
+    tokenizer=CLIPTokenizer.from_pretrained(base/"tokenizer",local_files_only=True)
+    scheduler=HeunDiscreteScheduler.from_pretrained(base/"scheduler",local_files_only=True)
+    pipe=ShapEPipeline(prior=prior,text_encoder=encoder,tokenizer=tokenizer,scheduler=scheduler,shap_e_renderer=renderer).to("cpu")
     report={"engine":"openai/shap-e","revision":revision,"device":"cpu","load_seconds":time.monotonic()-t,"results":[]}
     for i,prompt in enumerate(a.prompts):
         t=time.monotonic()
