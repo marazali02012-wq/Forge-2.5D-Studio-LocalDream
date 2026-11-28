@@ -1,0 +1,48 @@
+name: F02 actual SAM2 surface part selection lab
+on:
+  push:
+    branches: [forge-f02-segmentation-lab]
+    paths: ['studio/f02/**','verification/f02/**','.github/workflows/forge-f02-sam2-surface.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: forge-f02-sam2-surface
+  cancel-in-progress: true
+jobs:
+  parts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-f01-general-evidence
+          run-id: 46087227281
+          github-token: ${{ github.token }}
+          path: /tmp/real-models
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned actual SAM2 CPU
+        env:
+          SAM2_BUILD_CUDA: '0'
+        run: |
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84 hydra-core==1.3.2 iopath==0.1.10 tqdm==4.67.1 numba==0.60.0
+          git init /tmp/sam2
+          git -C /tmp/sam2 fetch --depth 1 https://github.com/facebookresearch/sam2.git 2b90b9f5ceec907a1c18123530e92e794ad901a4
+          git -C /tmp/sam2 checkout FETCH_HEAD
+          pip install --no-build-isolation --no-deps /tmp/sam2
+          pip check
+          curl -fL --retry 2 --max-time 120 --max-filesize 200000000 https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt -o /tmp/sam2-tiny.pt
+      - name: Actual SAM2 on real triangle surfaces
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+        run: python verification/f02/sam2_surface_qa.py /tmp/real-models /tmp/sam2-tiny.pt f02-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f02-sam2-surface-evidence
+          path: f02-evidence/
