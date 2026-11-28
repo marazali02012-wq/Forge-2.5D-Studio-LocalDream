@@ -1,0 +1,45 @@
+name: F01 Kaggle read-only GPU quota
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['.github/workflows/forge-f01-kaggle-quota.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  quota:
+    if: github.ref == 'refs/heads/forge-r70-surface-lab'
+    runs-on: ubuntu-24.04
+    environment: forge-kaggle
+    timeout-minutes: 3
+    steps:
+      - name: Read current GPU quota without allocating GPU
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,re,urllib.request,urllib.error,datetime
+          token=os.environ.get('KAGGLE_API_TOKEN','').strip()
+          if not token.startswith('KGAT_') or any(not 33<=ord(c)<=126 for c in token):
+              raise SystemExit('Invalid token format')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*a,**kw):return None
+          req=urllib.request.Request('https://api.kaggle.com/v1/kernels.KernelsApiService/GetAcceleratorQuotaStatistics',data=b'{}',headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
+          try:
+              with urllib.request.build_opener(NoRedirect()).open(req,timeout=30) as r:
+                  data=json.loads(r.read(1024*1024))
+          except urllib.error.HTTPError as e:raise SystemExit('HTTP '+str(e.code)) from None
+          except Exception as e:raise SystemExit(type(e).__name__) from None
+          q=data.get('gpuQuota')
+          if not isinstance(q,dict):raise SystemExit('Quota unavailable')
+          def seconds(v):
+              if not isinstance(v,str) or not re.fullmatch(r'\d+(\.\d+)?s',v):raise SystemExit('Unexpected duration format')
+              return float(v[:-1])
+          total=seconds(q.get('totalTimeAllowed'))
+          used=seconds(q.get('timeUsed','0s'))
+          reserved=seconds(q.get('timeReserved','0s'))
+          print('GPU_QUOTA_SECONDS total='+str(total)+' used='+str(used)+' reserved='+str(reserved)+' remaining='+str(max(0,total-used-reserved)),flush=True)
+          reset=data.get('quotaRefreshTime','')
+          if isinstance(reset,str) and re.fullmatch(r'[0-9T:.Z+\-]+',reset):print('GPU_QUOTA_RESET '+reset)
+          print('GPU_PAID_SCALING '+str(q.get('isPayToScaleEnabled','unknown')))
+          PY
