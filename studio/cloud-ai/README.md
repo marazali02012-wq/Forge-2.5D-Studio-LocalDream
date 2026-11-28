@@ -75,8 +75,11 @@ any GPU:
    queue nor uses GPU quota. The exact `forge_mask.py` and `triposg_cpu.py`
    sources are embedded in the private notebook. Measured on 2026-11-28:
    setup about 4 minutes, generation about 3.5 hours per image in float32
-   (about 3.8x slower than a 4 vCPU AMX server); sessions run in parallel.
-   Jobs on this provider are reported as timed out only after 6 hours.
+   (about 3.8x slower than a 4 vCPU AMX server, up to 4+ hours for a dense
+   mechanical image); sessions run in parallel. Sessions request 9 hours and
+   jobs on this provider are reported as timed out only after 10 hours. The
+   flow latents are saved as an output early, so a session stopped during
+   extraction can be finished elsewhere with `triposg_cpu.py --latents`.
 
 | Setting | Purpose |
 | --- | --- |

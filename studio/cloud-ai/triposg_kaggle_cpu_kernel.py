@@ -85,7 +85,7 @@ run([py, forge / "forge_mask.py", out / "source.png", base / "rgba.png", "--sam2
 flags = pathlib.Path("/proc/cpuinfo").read_text()
 bf16 = ["--bf16-transformer"] if (FORGE_BF16 and ("amx_bf16" in flags or "avx512_bf16" in flags)) else []  # noqa: F821
 run([py, forge / "triposg_cpu.py", tripo_src, weights, base / "rgba.png", out / "model.glb", *bf16],
-    timeout=4 * 3600)
+    timeout=int(8.5 * 3600))  # inside the 9 h session; latents are saved early either way
 local = json.loads((out / "model.report.json").read_text())
 mask = json.loads((base / "rgba.mask.json").read_text())
 report = dict(local, job_id=FORGE_JOB_ID, original_sha256=sha(inputs[0]),  # noqa: F821

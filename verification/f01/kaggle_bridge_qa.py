@@ -220,6 +220,8 @@ class BridgeTest(unittest.TestCase):
         payload = calls[0][2]
         self.assertFalse(payload["enableGpu"])
         self.assertFalse(payload["enableTpu"])
+        self.assertEqual(payload["sessionTimeoutSeconds"], 9 * 3600)   # one live session needed > 4 h
+        self.assertIn("timeout=int(8.5 * 3600)", payload["text"])
         self.assertNotIn("machineShape", payload)
         self.assertTrue(payload["isPrivate"])
         self.assertNotIn(provider.token, payload["text"])

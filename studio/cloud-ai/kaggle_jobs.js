@@ -86,8 +86,8 @@ kaggleStart.onclick = async () => {
     if (!/^[0-9a-f]{64}$/.test(job.id)) throw Error('İş kimliği geçersiz.');
     const jobPath = jobsPath + '/' + job.id;
     const started = Date.now();
-    // The server reports "timed_out" by its provider's own limit (3 h, Kaggle CPU 6 h).
-    const deadline = started + 6 * 3600_000;
+    // The server reports "timed_out" by its provider's own limit (3 h, Kaggle CPU 10 h).
+    const deadline = started + 10 * 3600_000;
     while (true) {
       const minutes = Math.floor((Date.now() - started) / 60000);
       kaggleStatus.textContent = job.message + (minutes ? ' · ' + minutes + ' dk' : '');

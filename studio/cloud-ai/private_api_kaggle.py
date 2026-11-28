@@ -24,9 +24,9 @@ URL = "/v1/kaggle-jobs"
 MEDIA = {"image/png": ("PNG", "png"), "image/jpeg": ("JPEG", "jpg"), "image/webp": ("WEBP", "webp")}
 LOCAL_TERMINAL = ("ready", "error", "cancelled")
 MAX_WAIT = 3 * 3600
-# A private Kaggle CPU session runs for 3-4 h (live HARD10, 2026-11-28) under a
-# 5 h session limit, so its jobs are not reported as timed out before that.
-KAGGLE_CPU_WAIT = 6 * 3600
+# A private Kaggle CPU session ran 3.5-4+ h (live HARD10, 2026-11-28) under a
+# 9 h session limit, so its jobs are not reported as timed out before that.
+KAGGLE_CPU_WAIT = 10 * 3600
 QA = ROOT.parent.parent / "verification/f01/triposg_mobile_repair_qa.py"
 JOB_ROUTE = re.compile(URL + r"/([0-9a-f]{64})(/model)?")
 STATUS = {
@@ -46,7 +46,7 @@ KAGGLE_CPU_STATUS = {
     **STATUS,
     "waiting": "Kaggle CPU oturumu hazırlanıyor (GPU kotası kullanılmaz).",
     "queued": "Kaggle CPU oturumu başlatılıyor.",
-    "running": "Kaggle CPU oturumu maskeyi ve TripoSG modelini üretiyor (3-4 saat sürebilir).",
+    "running": "Kaggle CPU oturumu maskeyi ve TripoSG modelini üretiyor (3-6 saat sürebilir).",
 }
 LOCAL_STATUS = {
     **STATUS,

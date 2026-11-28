@@ -219,7 +219,9 @@ class Kaggle:
             "slug": f"{self.owner}/{slug}", "newTitle": slug, "text": source,
             "language": "python", "kernelType": "script", "isPrivate": True,
             "enableGpu": gpu, "enableInternet": True, "enableTpu": False,
-            "sessionTimeoutSeconds": 3600 if gpu else 5 * 3600,
+            # Live HARD10: one CPU session exceeded 4 h (clock: dense gears and
+            # gaps); Kaggle allows 12 h, Forge asks for 9 h.
+            "sessionTimeoutSeconds": 3600 if gpu else 9 * 3600,
             "kernelExecutionType": "SAVE_AND_RUN_ALL",
             "datasetDataSources": [f"{self.owner}/{dataset}"],
             "kernelDataSources": [], "competitionDataSources": [], "modelDataSources": [],
