@@ -1,0 +1,81 @@
+{
+ "case": "armor",
+ "provider": "private Kaggle CPU session (batch, no GPU quota)",
+ "source": "Wikimedia Commons HARD10 public image, see hard10_manifest.json",
+ "mask": {
+  "mask_model": "BiRefNet",
+  "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+  "license": "MIT",
+  "binarized": false,
+  "components": 1,
+  "solid_pixels": 163696,
+  "soft_pixels": 5875,
+  "bridge": {
+   "large_parts": 1,
+   "occluder": "not_needed"
+  }
+ },
+ "engine": {
+  "engine": "TripoSG",
+  "model_revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+  "device": "cpu",
+  "dtype": "float32",
+  "steps": 50,
+  "guidance": 7.0,
+  "seed": 42,
+  "octree_depth": 9,
+  "faces": 517566,
+  "vertices": 258779,
+  "denoise_seconds": 6148.9,
+  "inference_seconds": 12492.1,
+  "extraction": {
+   "dense_queries": 16777216,
+   "dense_seconds": 5240.3,
+   "band_queries_512": 3470576,
+   "band_seconds_512": 1093.4
+  },
+  "glb_sha256": "c720e5601a4285b2f134dd570904139b0c52d33a55beb0d246a88845ee1e9d61",
+  "bytes": 9316944,
+  "inference_seconds_note": "Kaggle CPU session, about 3.8x slower than this server"
+ },
+ "raw_khronos": [
+  0,
+  0
+ ],
+ "mobile": {
+  "source_components": 3,
+  "triangles": 59000,
+  "vertices": 29496,
+  "bytes": 1416980,
+  "topology": {
+   "euler": -4,
+   "boundary_edges": 0,
+   "boundary_length": 0.0,
+   "nonmanifold": 0,
+   "components": 3,
+   "winding": true
+  },
+  "p99_surface_pct": 0.01407731419381758,
+  "max_sample_surface_pct": 0.024242531099278833,
+  "area_change_pct": 0.033235090193550754,
+  "self_intersection_pairs": 0,
+  "method": "topology_first_local_self_boolean",
+  "decimation_overrides": {},
+  "geometry_gate_passed": true
+ },
+ "mobile_glb_sha256": "56ad732537a76cf130dd51a193d89fc41b3fb1e35bb0ef71c1e6a8b24da204e5",
+ "mobile_khronos": [
+  0,
+  0
+ ],
+ "editor": {
+  "provider": "local test double",
+  "renderedTriangles": 59000,
+  "angles": 5,
+  "dialogSizes": 3,
+  "KhronosErrors": 0,
+  "KhronosWarnings": 0,
+  "jsErrors": 0
+ },
+ "visual_review": "Source shows the armour from behind; the matching view reproduces back plates, tonlet skirt, arm and leg harness with knee cops; the unseen front (breastplate, visored helmet) is a plausible prediction. 3 closed parts."
+}
