@@ -20,9 +20,9 @@ jobs:
           python-version: '3.11'
       - name: Install pinned CPU camera and geometry libraries
         run: pip install pycolmap==3.12.1 numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84
-      - name: Fetch real calibrated photos
+      - name: Fetch official 48-view DinoRing benchmark (separate from sparse ring)
         run: |
-          curl -fL --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoSparseRing.zip -o /tmp/dino.zip
+          curl -fL --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoRing.zip -o /tmp/dino.zip
           mkdir /tmp/dino && unzip -q /tmp/dino.zip -d /tmp/dino
       - name: Recover camera poses without reference calibration and create mesh
         env:
