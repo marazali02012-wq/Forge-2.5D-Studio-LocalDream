@@ -73,6 +73,34 @@ jobs:
           failure=data.get('failureMessage') or ''
           if not isinstance(files,list) or not isinstance(log,str) or not isinstance(failure,str):
               raise SystemExit('Unexpected output or log schema')
+          if not log.strip():
+              # The CLI's streaming route can show a running session before a persisted log exists.
+              def stream_log(slug):
+                  url=f'https://api.kaggle.com/v1/kernels/logs/stream/{owner}/{slug}?versionLabel=v1'
+                  req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'text/event-stream, */*'})
+                  try:
+                      with opener.open(req,timeout=8) as response:
+                          content_type=response.headers.get('Content-Type','').partition(';')[0].strip().lower()
+                          try:
+                              first_line=response.readline(4096)
+                          except TimeoutError:
+                              return 'HTTP '+str(response.status)+'; no line within timeout',''
+                          if content_type=='text/event-stream':
+                              event=first_line.decode('utf-8',errors='replace').strip()
+                              payload=event.removeprefix('data:').strip() if event.startswith('data:') else ''
+                              return 'HTTP '+str(response.status)+'; event stream',payload
+                          if content_type=='application/json' or content_type=='text/plain':
+                              return 'HTTP '+str(response.status)+'; persisted log route',first_line.decode('utf-8',errors='replace')
+                          return 'HTTP '+str(response.status)+'; unexpected content type',''
+                  except urllib.error.HTTPError as exc:
+                      return 'HTTP '+str(exc.code),''
+                  except (OSError,ValueError):
+                      return 'transport error',''
+              stream_status,log=stream_log(target['kernelSlug'])
+              print('PRIVATE_MODEL_STREAM: '+stream_status,flush=True)
+              if stream_status.startswith('HTTP 404'):
+                  control_status,_=stream_log('forge-f01-gpu-probe-46112405912')
+                  print('COMPLETED_GPU_CONTROL_STREAM: '+control_status,flush=True)
           print('PRIVATE_EXECUTION_LOG_PRESENT: '+str(bool(log.strip())),flush=True)
           print('PRIVATE_FAILURE_MESSAGE_PRESENT: '+str(bool(failure.strip())),flush=True)
           # Only report known milestones or failure categories. Raw logs can contain private paths or signed URLs.
