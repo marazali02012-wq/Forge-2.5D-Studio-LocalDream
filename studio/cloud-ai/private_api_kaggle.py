@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -39,6 +38,23 @@ STATUS = {
     "error": "Kaggle üretimi veya GLB doğrulaması başarısız.",
     "cancelled": "Kaggle işi iptal edildi.",
     "timed_out": "Bekleme süresi doldu. Aynı görseli seçerek mevcut işi yeniden kontrol edebilirsin.",
+}
+KAGGLE_CPU_STATUS = {
+    **STATUS,
+    "waiting": "Kaggle CPU oturumu hazırlanıyor (GPU kotası kullanılmaz).",
+    "queued": "Kaggle CPU oturumu başlatılıyor.",
+    "running": "Kaggle CPU oturumu maskeyi ve TripoSG modelini üretiyor (yaklaşık 45-75 dk).",
+}
+LOCAL_STATUS = {
+    **STATUS,
+    "waiting": "Sunucu işlemci sırası kontrol ediliyor.",
+    "dataset": "Görsel sunucuda özel klasöre alınıyor.",
+    "submitting": "Sunucuda üretim başlatılıyor.",
+    "unreported": "Sunucu üretim durumunu henüz bildirmedi.",
+    "queued": "Sunucu işlemci sırasında.",
+    "running": "Sunucu işlemcisi maskeyi ve TripoSG modelini üretiyor (CPU, yaklaşık 30-45 dk).",
+    "error": "Sunucu üretimi veya GLB doğrulaması başarısız.",
+    "cancelled": "Sunucu işi iptal edildi.",
 }
 
 
@@ -81,8 +97,8 @@ def mobile_model(raw, report):
 
 
 class Jobs:
-    def __init__(self, directory, provider, convert=mobile_model):
-        self.provider, self.convert = provider, convert
+    def __init__(self, directory, provider, convert=mobile_model, messages=STATUS):
+        self.provider, self.convert, self.messages = provider, convert, messages
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
         if directory.stat().st_mode & 0o077:
             raise ValueError("Forge Kaggle state directory must be private")
@@ -168,7 +184,20 @@ class Jobs:
             if state == "dataset":
                 if aged:
                     self.move(job, "error")
-                elif provider.dataset_ready(dataset):
+                    return
+                try:
+                    ready = provider.dataset_ready(dataset)
+                except ProviderError as exc:
+                    # A create call that failed before the dataset existed leaves
+                    # nothing to wait for. The slug is fixed, so a retry cannot
+                    # produce a second dataset; it is rate limited to one a minute.
+                    if (exc.status in (403, 404) and row["input"] is not None
+                            and time.time() - row["changed"] >= 60):
+                        self.move(job, "dataset")
+                        provider.create_dataset(dataset, row["input"], row["suffix"])
+                        return
+                    raise
+                if ready:
                     if provider.notebook_exists(slug, dataset):
                         self.move(job, "unreported")
                     elif provider.admission():
@@ -226,7 +255,7 @@ class KaggleHandler(PhotoHandler):
         state = row["state"]
         if state not in LOCAL_TERMINAL and time.time() - row["created"] >= MAX_WAIT:
             state = "timed_out"
-        self.respond(code, {"id": job, "status": state, "message": STATUS[state]})
+        self.respond(code, {"id": job, "status": state, "message": self.jobs.messages[state]})
 
     def do_GET(self):
         route = JOB_ROUTE.fullmatch(self.path)
@@ -286,14 +315,24 @@ class KaggleHandler(PhotoHandler):
 
 def main():
     kaggle_token = os.environ.pop("KAGGLE_API_TOKEN", "")
-    if os.getenv("FORGE_KAGGLE_RESEARCH") == "1":
-        if shutil.which("kaggle") is None:
-            raise RuntimeError("Install the Kaggle CLI before enabling research mode")
+    if os.getenv("FORGE_KAGGLE_RESEARCH") == "1" and os.getenv("FORGE_LOCAL_TRIPOSG") == "1":
+        raise RuntimeError("Enable either the Kaggle or the local TripoSG provider, not both")
+    if os.getenv("FORGE_LOCAL_TRIPOSG") == "1":
+        # GPU-free path: same job API, state machine and mobile gate; no third party.
+        from local_triposg_provider import from_environment
+
+        jobs = Jobs(Path(os.environ["FORGE_KAGGLE_STATE_DIR"]), from_environment(), messages=LOCAL_STATUS)
+        KaggleHandler.jobs = jobs
+        threading.Thread(target=jobs.run, daemon=True).start()
+    elif os.getenv("FORGE_KAGGLE_RESEARCH") == "1":
+        accelerator = os.getenv("FORGE_KAGGLE_ACCELERATOR", "gpu")
         provider = Kaggle(
             os.environ["FORGE_KAGGLE_OWNER"], kaggle_token,
             os.environ["FORGE_KAGGLE_EXISTING_SLUG"],
+            accelerator=accelerator, bf16=os.getenv("FORGE_KAGGLE_BF16") == "1",
         )
-        jobs = Jobs(Path(os.environ["FORGE_KAGGLE_STATE_DIR"]), provider)
+        jobs = Jobs(Path(os.environ["FORGE_KAGGLE_STATE_DIR"]), provider,
+                    messages=KAGGLE_CPU_STATUS if accelerator == "cpu" else STATUS)
         KaggleHandler.jobs = jobs
         threading.Thread(target=jobs.run, daemon=True).start()
     BoundedServer((os.getenv("FORGE_BIND", "127.0.0.1"), int(os.getenv("PORT", "8765"))),

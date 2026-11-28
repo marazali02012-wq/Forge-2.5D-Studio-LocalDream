@@ -1,18 +1,18 @@
 """Server-only Kaggle adapter for the private F01 research worker."""
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import struct
-import subprocess
-import tempfile
+import time
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 KERNELS = "kernels.KernelsApiService"
 DATASETS = "datasets.DatasetApiService"
+BLOBS = "blobs.BlobApiService"
+UPLOAD_HOSTS = ("storage.googleapis.com", "www.kaggle.com", "api.kaggle.com")
 TERMINAL = {"complete", "error", "cancelled"}
 ENGINE_REVISION = "2c1c516d22d58db486a058d98d31bb6177344e06"
 
@@ -29,12 +29,15 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 class Kaggle:
-    def __init__(self, owner, token, existing):
+    def __init__(self, owner, token, existing, accelerator="gpu", bf16=False):
         if not re.fullmatch(r"[\w-]+", owner, re.ASCII) or not re.fullmatch(r"KGAT_[!-~]+", token):
             raise ValueError("Invalid Kaggle server configuration")
         if not re.fullmatch(r"[\w-]+", existing, re.ASCII):
             raise ValueError("Configure the existing Kaggle notebook to guard GPU admission")
+        if accelerator not in ("gpu", "cpu"):
+            raise ValueError("Kaggle accelerator must be gpu or cpu")
         self.owner, self.token, self.existing = owner, token, existing
+        self.accelerator, self.bf16 = accelerator, bool(bf16)
         self.opener = build_opener(NoRedirect())
 
     def read(self, request, limit, timeout):
@@ -85,6 +88,10 @@ class Kaggle:
         }.get(status, "unreported")
 
     def admission(self):
+        if self.accelerator == "cpu":
+            # CPU sessions consume no GPU/TPU quota and skip the GPU queue. The
+            # job table still serialises Forge work to one active session.
+            return True
         if self.status(self.existing) not in TERMINAL:
             return False
         quota = self.rpc(KERNELS, "GetAcceleratorQuotaStatistics", {}).get("gpuQuota")
@@ -109,24 +116,51 @@ class Kaggle:
         return remaining >= 7200
 
     def create_dataset(self, slug, raw, suffix):
-        with tempfile.TemporaryDirectory(prefix="forge-kaggle-input-") as temp:
-            folder = Path(temp)
-            (folder / f"input.{suffix}").write_bytes(raw)
-            (folder / "dataset-metadata.json").write_text(json.dumps({
-                "title": slug, "id": f"{self.owner}/{slug}",
-                "description": "Private Forge research input.",
-                "licenses": [{"name": "unknown"}],
-            }))
-            subprocess.run(
-                ["kaggle", "datasets", "create", "-p", temp, "-q"],
-                env={
-                    **{key: value for key, value in os.environ.items()
-                       if not key.endswith(("_KEY", "_TOKEN"))},
-                    "KAGGLE_API_TOKEN": self.token,
-                },
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, timeout=120, check=True,
-            )
+        # Official API flow (kagglesdk 0.1.38 StartBlobUpload -> PUT -> CreateDataset).
+        # The former `kaggle datasets create` subprocess failed with CLI 2.2.5,
+        # which does not declare its `six` import, and needed the token in a
+        # child environment. Nothing here leaves the server except the image.
+        media = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}[suffix]
+        try:
+            # Idempotent: a dataset from an earlier attempt with this fixed slug
+            # is reused; dataset_ready() still verifies privacy and version 1.
+            self.rpc(DATASETS, "GetDatasetStatus", {"ownerSlug": self.owner, "datasetSlug": slug})
+            return
+        except ProviderError as exc:
+            if exc.status not in (403, 404):
+                raise
+        started = self.rpc(BLOBS, "StartBlobUpload", {
+            "type": "DATASET", "name": f"input.{suffix}", "contentType": media,
+            "contentLength": len(raw), "lastModifiedEpochSeconds": int(time.time()),
+        })
+        token, url = started.get("token"), started.get("createUrl")
+        if not isinstance(token, str) or not token or not isinstance(url, str):
+            raise ProviderError()
+        self.upload(url, raw, media)
+        created = self.rpc(DATASETS, "CreateDataset", {
+            "ownerSlug": self.owner, "slug": slug, "title": slug, "licenseName": "unknown",
+            "isPrivate": True, "description": "Private Forge research input.",
+            "files": [{"token": token}],
+        })
+        # Same success rule as the official CLI (status "ok", no error text).
+        if str(created.get("status", "")).lower() != "ok" or created.get("error"):
+            raise ValueError("Kaggle dataset creation not confirmed")
+
+    def upload(self, url, raw, media):
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        # Live 2026-11-28: createUrl is the GCS JSON upload endpoint
+        # https://www.googleapis.com/upload/storage/v1/b/kaggle-data-sets/o?...
+        gcs_json = host == "www.googleapis.com" and parts.path.startswith("/upload/storage/")
+        if (parts.scheme != "https" or parts.username or parts.password or parts.port not in (None, 443)
+                or not (gcs_json or host in UPLOAD_HOSTS or host.endswith(".storage.googleapis.com"))):
+            raise ValueError("Unexpected Kaggle upload host")
+        request = Request(url, data=bytes(raw), method="PUT", headers={
+            "Content-Type": media, "Content-Length": str(len(raw)),
+            "Content-Range": f"bytes 0-{len(raw) - 1}/{len(raw)}",
+        })
+        # Signed upload URLs carry their own authorisation; never log them.
+        self.read(request, 65536, 120)
 
     def dataset_ready(self, slug):
         target = {"ownerSlug": self.owner, "datasetSlug": slug}
@@ -145,29 +179,54 @@ class Kaggle:
         try:
             result = self.rpc(KERNELS, "GetKernel", self.target(slug))
         except ProviderError as exc:
-            if exc.status == 404:
+            # Live 2026-11-28: GetKernel answers HTTP 403, not 404, for a private
+            # slug that does not exist yet. Treat it as missing only when the
+            # owner's own notebook listing succeeds and does not contain it.
+            if exc.status in (403, 404) and not self.listed(slug):
                 return False
             raise
         meta = result.get("metadata", {})
         if (meta.get("isPrivate") is not True or meta.get("currentVersionNumber") != 1
-                or meta.get("enableGpu") is not True
+                or bool(meta.get("enableGpu", False)) is not (self.accelerator == "gpu")
                 or meta.get("datasetDataSources") != [f"{self.owner}/{dataset}"]):
             raise ValueError("Notebook privacy, version or input not confirmed")
         return True
 
-    def submit(self, slug, dataset, job, digest):
-        template = Path(__file__).with_name("triposg_kaggle_kernel.py").read_text()
-        source = f"FORGE_JOB_ID={job!r}\nFORGE_IMAGE_SHA256={digest!r}\n" + template
+    def kernel_source(self, job, digest):
+        header = f"FORGE_JOB_ID={job!r}\nFORGE_IMAGE_SHA256={digest!r}\n"
+        if self.accelerator == "gpu":
+            source = header + Path(__file__).with_name("triposg_kaggle_kernel.py").read_text()
+        else:
+            here = Path(__file__).parent
+            files = {name: (here / name).read_text() for name in ("forge_mask.py", "triposg_cpu.py")}
+            source = (header + f"FORGE_FILES={files!r}\nFORGE_BF16={self.bf16!r}\n"
+                      + (here / "triposg_kaggle_cpu_kernel.py").read_text())
         compile(source, "forge_kaggle_kernel.py", "exec")
-        self.rpc(KERNELS, "SaveKernel", {
+        return source
+
+    def listed(self, slug):
+        rows = self.rpc(KERNELS, "ListKernels", {
+            "user": self.owner, "search": slug, "sortBy": "DATE_CREATED", "pageSize": 100,
+        }).get("kernels", [])
+        if not isinstance(rows, list):
+            raise ProviderError()
+        return any(isinstance(row, dict) and row.get("ref") == f"{self.owner}/{slug}" for row in rows)
+
+    def submit(self, slug, dataset, job, digest):
+        source = self.kernel_source(job, digest)
+        gpu = self.accelerator == "gpu"
+        body = {
             "slug": f"{self.owner}/{slug}", "newTitle": slug, "text": source,
             "language": "python", "kernelType": "script", "isPrivate": True,
-            "enableGpu": True, "enableInternet": True, "enableTpu": False,
-            "machineShape": "NvidiaTeslaT4", "sessionTimeoutSeconds": 3600,
+            "enableGpu": gpu, "enableInternet": True, "enableTpu": False,
+            "sessionTimeoutSeconds": 3600 if gpu else 5 * 3600,
             "kernelExecutionType": "SAVE_AND_RUN_ALL",
             "datasetDataSources": [f"{self.owner}/{dataset}"],
             "kernelDataSources": [], "competitionDataSources": [], "modelDataSources": [],
-        })
+        }
+        if gpu:
+            body["machineShape"] = "NvidiaTeslaT4"
+        self.rpc(KERNELS, "SaveKernel", body)
 
     def output(self, slug, job, digest):
         target = {**self.target(slug), "versionLabel": "v1", "pageSize": 100}

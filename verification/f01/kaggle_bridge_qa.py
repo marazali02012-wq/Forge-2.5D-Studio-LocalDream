@@ -210,6 +210,146 @@ class BridgeTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             provider.output("test-notebook", "id", "digest")
 
+    def test_cpu_session_skips_gpu_queue_and_ships_exact_sources(self):
+        provider = Kaggle("fixture", "KGAT_fixture", "existing", accelerator="cpu")
+        provider.rpc = lambda *_: self.fail("CPU admission must not query GPU state or quota")
+        self.assertTrue(provider.admission())
+        calls = []
+        provider.rpc = lambda *args: calls.append(args)
+        provider.submit("test-notebook", "test-dataset", "a" * 64, "a" * 64)
+        payload = calls[0][2]
+        self.assertFalse(payload["enableGpu"])
+        self.assertFalse(payload["enableTpu"])
+        self.assertNotIn("machineShape", payload)
+        self.assertTrue(payload["isPrivate"])
+        self.assertNotIn(provider.token, payload["text"])
+        namespace = {}
+        exec(payload["text"].split('"""F01 private Kaggle CPU session', 1)[0], namespace)
+        root = Path(__file__).resolve().parents[2] / "studio/cloud-ai"
+        for name in ("forge_mask.py", "triposg_cpu.py"):
+            self.assertEqual(namespace["FORGE_FILES"][name], (root / name).read_text())
+        self.assertEqual(namespace["FORGE_IMAGE_SHA256"], "a" * 64)
+        self.assertIs(namespace["FORGE_BF16"], False)
+        provider.rpc = lambda *_: {"metadata": {
+            "isPrivate": True, "currentVersionNumber": 1,
+            "datasetDataSources": ["fixture/test-dataset"]}}
+        self.assertTrue(provider.notebook_exists("test-notebook", "test-dataset"))
+        gpu = Kaggle("fixture", "KGAT_fixture", "existing")
+        gpu.rpc = provider.rpc
+        with self.assertRaises(ValueError):
+            gpu.notebook_exists("test-notebook", "test-dataset")
+        with self.assertRaises(ValueError):
+            Kaggle("fixture", "KGAT_fixture", "existing", accelerator="tpu")
+
+    def test_dataset_creation_uses_official_api_without_cli(self):
+        provider = Kaggle("fixture", "KGAT_fixture", "existing")
+        calls, uploads = [], []
+
+        def rpc(service, method, body):
+            calls.append((method, body))
+            if method == "GetDatasetStatus":
+                raise ProviderError(403)
+            if method == "StartBlobUpload":
+                return {"token": "blob-token", "createUrl": (
+                    "https://www.googleapis.com/upload/storage/v1/b/kaggle-data-sets/o?uploadType=resumable")}
+            return {"ref": "https://www.kaggle.com/datasets/fixture/forge-f01-input-x", "status": "Ok"}
+        provider.rpc = rpc
+        provider.read = lambda request, *_: uploads.append(request) or b""
+        raw = image()
+        provider.create_dataset("forge-f01-input-x", raw, "png")
+        self.assertEqual([name for name, _ in calls], ["GetDatasetStatus", "StartBlobUpload", "CreateDataset"])
+        self.assertEqual(calls[1][1]["contentLength"], len(raw))
+        self.assertEqual(calls[1][1]["type"], "DATASET")
+        created = calls[2][1]
+        self.assertIs(created["isPrivate"], True)
+        self.assertEqual(created["files"], [{"token": "blob-token"}])
+        self.assertEqual((uploads[0].get_method(), uploads[0].data), ("PUT", raw))
+        self.assertEqual(uploads[0].get_header("Content-range"), f"bytes 0-{len(raw) - 1}/{len(raw)}")
+        self.assertNotIn("KGAT_fixture", json.dumps(created))
+        def missing_then(url):
+            def rpc(service, method, body):
+                if method == "GetDatasetStatus":
+                    raise ProviderError(404)
+                if method == "StartBlobUpload":
+                    return {"token": "t", "createUrl": url}
+                self.fail("No dataset without a verified upload")
+            return rpc
+        for url in ("http://storage.googleapis.com/x", "https://evil.example/x",
+                    "https://user@storage.googleapis.com/x", "https://www.googleapis.com/drive/v3/x"):
+            provider.rpc = missing_then(url)
+            with self.assertRaises(ValueError):
+                provider.create_dataset("forge-f01-input-x", raw, "png")
+        # An existing dataset with the fixed slug is reused, never duplicated.
+        provider.rpc = lambda s, m, b: {"status": "READY"} if m == "GetDatasetStatus" else self.fail(m)
+        provider.create_dataset("forge-f01-input-x", raw, "png")
+        # Creation is confirmed only by the CLI's success rule.
+        def refused(service, method, body):
+            if method == "GetDatasetStatus":
+                raise ProviderError(404)
+            if method == "StartBlobUpload":
+                return {"token": "t", "createUrl": "https://storage.googleapis.com/x"}
+            return {"status": "Error", "error": "slug in use"}
+        provider.rpc = refused
+        with self.assertRaises(ValueError):
+            provider.create_dataset("forge-f01-input-x", raw, "png")
+
+    def test_failed_dataset_creation_is_retried_once_per_minute(self):
+        class Flaky(TestProvider):
+            def __init__(self):
+                super().__init__()
+                self.created = 0
+
+            def create_dataset(self, slug, raw, suffix):
+                self.created += 1
+                if self.created == 1:
+                    raise ValueError("Unexpected Kaggle upload host")
+
+            def dataset_ready(self, slug):
+                if self.created < 2:
+                    raise ProviderError(403)
+                return True
+
+        provider = Flaky()
+        jobs = Jobs(Path(self.directory.name) / "flaky", provider, lambda model, _: model)
+        job = jobs.add(image(), "png")
+        jobs.tick()
+        self.assertEqual((jobs.get(job)["state"], provider.created), ("dataset", 1))
+        jobs.tick()
+        self.assertEqual(provider.created, 1)  # rate limited
+        with jobs.connect() as db:
+            db.execute("UPDATE jobs SET changed = changed - 61")
+        jobs.tick()
+        self.assertEqual(provider.created, 2)
+        for _ in range(3):
+            jobs.tick()
+        self.assertEqual(provider.submissions, 1)
+        self.assertEqual(jobs.get(job)["state"], "queued")
+
+    def test_missing_private_notebook_403_is_confirmed_by_listing(self):
+        provider = Kaggle("fixture", "KGAT_fixture", "existing", accelerator="cpu")
+        listing = {"kernels": [{"ref": "fixture/other"}]}
+
+        def rpc(service, method, body):
+            if method == "GetKernel":
+                raise ProviderError(403)
+            if method == "ListKernels":
+                self.assertEqual(body["search"], "forge-f01-job-a")
+                return listing
+            self.fail(method)
+        provider.rpc = rpc
+        self.assertFalse(provider.notebook_exists("forge-f01-job-a", "forge-f01-input-a"))
+        listing["kernels"].append({"ref": "fixture/forge-f01-job-a"})
+        with self.assertRaises(ProviderError):
+            provider.notebook_exists("forge-f01-job-a", "forge-f01-input-a")
+
+        def unlisted(service, method, body):
+            if method == "GetKernel":
+                raise ProviderError(403)
+            raise ProviderError(401)
+        provider.rpc = unlisted
+        with self.assertRaises(ProviderError):
+            provider.notebook_exists("forge-f01-job-a", "forge-f01-input-a")
+
 
 def serve_fixture(model):
     provider = TestProvider(Path(model).read_bytes())
