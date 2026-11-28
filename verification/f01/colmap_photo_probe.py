@@ -39,7 +39,7 @@ def estimated_views(r,source):
     return rows
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument("dataset",type=Path);p.add_argument("output",type=Path);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument("dataset",type=Path);p.add_argument("output",type=Path);p.add_argument("--image-up",choices=["top","right","bottom","left"],default=None);a=p.parse_args()
     a.output.mkdir(parents=True,exist_ok=False)
     # Only the RGB + generated foreground masks enter the SfM solver.
     source=read_middlebury(a.dataset,a.output/"mask_previews")
@@ -66,6 +66,18 @@ def main():
     if report["aligned_camera_rmse_pct"]>10:raise ValueError("camera trajectory alignment acceptance failed")
     # Never substitute sparse point clouds for a surface.
     m=reconstruct(rows);coverage=colorize(m,rows)
+    if a.image_up:
+        from forge_sfm_orientation import alignment
+        ordered=sorted((im for im in r.images.values() if im.has_pose),key=lambda im:im.name)
+        rotations=[];centers=[]
+        for im in ordered:
+            rt=im.cam_from_world().matrix();rotations.append(rt[:,:3]);centers.append(-rt[:,:3].T@rt[:,3])
+        transform,metrics=alignment(rotations,centers,a.image_up)
+        source_faces=m.faces.copy();source_colors=m.visual.vertex_colors.copy();area=m.area;volume=m.volume
+        m.apply_transform(transform)
+        assert np.array_equal(m.faces,source_faces) and np.array_equal(m.visual.vertex_colors,source_colors)
+        assert np.isclose(m.area,area) and np.isclose(m.volume,volume)
+        report["orientation"]=metrics
     dst=a.output/"model.glb";m.export(dst,include_normals=True)
     q=trimesh.load(dst,force="mesh",process=False);assert len(q.faces)==len(m.faces) and q.visual.kind=="vertex"
     report.update(faces=len(q.faces),vertices=len(q.vertices),watertight=bool(q.is_watertight),color_coverage=coverage)
