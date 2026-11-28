@@ -1,0 +1,86 @@
+{
+ "case": "05-bicycle",
+ "source": "Wikimedia Commons Bike-side.jpg (CC0), 1280px thumbnail, see hard10_manifest.json",
+ "mask": {
+  "mask_model": "BiRefNet",
+  "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+  "license": "MIT",
+  "binarized": false,
+  "components": 17,
+  "removed_components": 0,
+  "solid_pixels": 161457,
+  "soft_pixels": 20480,
+  "seconds": 30.0
+ },
+ "engine": {
+  "engine": "TripoSG",
+  "model_revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+  "device": "cpu",
+  "dtype": "float32",
+  "steps": 50,
+  "guidance": 7.0,
+  "seed": 42,
+  "octree_depth": 9,
+  "faces": 730036,
+  "vertices": 365098,
+  "denoise_seconds": 1654.0,
+  "inference_seconds": 3300.4,
+  "extraction": {
+   "dense_queries": 16777216,
+   "dense_seconds": 1145.0,
+   "band_queries_512": 7227640,
+   "band_seconds_512": 497.1
+  },
+  "glb_sha256": "0b24f7e8d6be0e628a3940cce2acc2e191a3c626d7386f3100f3f27e7b15df01",
+  "bytes": 13142412
+ },
+ "raw_topology": {
+  "components": 118,
+  "watertight": true,
+  "boundary_edges": 0,
+  "nonmanifold_edges": 0,
+  "khronos": [
+   0,
+   0
+  ]
+ },
+ "mobile": {
+  "source_components": 118,
+  "triangles": 58494,
+  "vertices": 29327,
+  "bytes": 1406848,
+  "topology": {
+   "euler": 80,
+   "boundary_edges": 0,
+   "boundary_length": 0.0,
+   "nonmanifold": 0,
+   "components": 118,
+   "winding": true
+  },
+  "p99_surface_pct": 0.04127467069283443,
+  "max_sample_surface_pct": 0.145931120999563,
+  "area_change_pct": 0.04907299749077332,
+  "self_intersection_pairs": 0,
+  "method": "proportional_parts_local_self_boolean",
+  "fallback_reason": "Small component could not be repaired without detail loss",
+  "decimation_overrides": {},
+  "geometry_gate_passed": true
+ },
+ "mobile_glb_sha256": "29485473156cc7745566d288a9bb839351c7cdc6b05987103453e169cf35012e",
+ "mobile_khronos": [
+  0,
+  0
+ ],
+ "editor": {
+  "provider": "local test double with the real GLB",
+  "renderedTriangles": 58494,
+  "angles": 5,
+  "dialogSizes": 3,
+  "roundtripKhronos": [
+   0,
+   0
+  ],
+  "jsErrors": 0
+ },
+ "visual_review": "Raw and mobile: open wheels, visible spokes, basket wires, handlebar, saddle, frame and kickstand in front/back/right/left/diagonal views. Acceptance of the full HARD10 set remains open."
+}

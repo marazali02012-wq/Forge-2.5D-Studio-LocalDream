@@ -138,6 +138,45 @@ def topology_first(part, target):
     )
 
 
+def without_degeneracies(part, scale):
+    """Collapse marching-cubes zero-area faces (MeshLib) without moving the surface."""
+    from meshlib import mrmeshpy, mrmeshnumpy
+
+    mesh = meshlib_mesh(part)
+    params = mrmeshpy.FixMeshDegeneraciesParams()
+    params.maxDeviation = 1e-6 * scale
+    params.tinyEdgeLength = 1e-7 * scale
+    mrmeshpy.fixMeshDegeneracies(mesh, params)
+    mesh.pack()
+    fixed = trimesh.Trimesh(
+        mrmeshnumpy.getNumpyVerts(mesh), mrmeshnumpy.getNumpyFaces(mesh.topology), process=False
+    )
+    if not clean(fixed) or fixed.euler_number != part.euler_number:
+        raise ValueError("Degenerate faces could not be removed without a topology change")
+    return fixed
+
+
+def proportional_parts(parts, scale, budget=58500, floor=48):
+    """Give every connected part a triangle share proportional to its size.
+
+    Parts at or under their share are kept (only zero-area faces collapsed);
+    larger parts use the same topology-aware MeshLib decimation as the main
+    path. Nothing is dropped, so the component-count gate still applies.
+    """
+    total = sum(len(part.faces) for part in parts)
+    shares = [max(min(len(part.faces), floor), int(budget * len(part.faces) / total)) for part in parts]
+    excess = sum(min(share, len(part.faces)) for share, part in zip(shares, parts)) - budget
+    if excess > 0:
+        shares[0] -= excess
+    out = []
+    for part, share in zip(parts, shares):
+        if share >= len(part.faces):
+            out.append(part if clean(part) else without_degeneracies(part, scale))
+        else:
+            out.append(topology_first(part, max(share, 8)))
+    return trimesh.util.concatenate(out)
+
+
 def fix_local_intersections(model):
     from meshlib import mrmeshpy, mrmeshnumpy
 
@@ -191,16 +230,28 @@ def main():
         raise ValueError("Empty source surface")
 
     largest, *small = components(source)
-    parts = [preserve_small_part(part, scale) for part in small]
-    target = 59000 - sum(len(part.faces) for part in parts)
-    if target <= 6:
-        raise ValueError("Accessories exceed the triangle budget")
+    fallback = None
     if args.topology_first:
-        simplified = topology_first(largest, target)
-        combined = trimesh.util.concatenate([simplified, *parts])
+        try:
+            parts = [preserve_small_part(part, scale) for part in small]
+            target = 59000 - sum(len(part.faces) for part in parts)
+            if target <= 6:
+                raise ValueError("Accessories exceed the triangle budget")
+            simplified = topology_first(largest, target)
+            combined = trimesh.util.concatenate([simplified, *parts])
+        except ValueError as exc:
+            # Multi-part objects (HARD10 bicycle: 118 parts, second part 59,304
+            # faces, marching-cubes zero-area faces) do not fit the "decimate
+            # the largest part, keep the rest" rule. Same gate, other budget.
+            fallback = str(exc)
+            combined = proportional_parts([largest, *small], scale)
         before = combined if args.diagnose_repair else None
         model = fix_local_intersections(combined)
     else:
+        parts = [preserve_small_part(part, scale) for part in small]
+        target = 59000 - sum(len(part.faces) for part in parts)
+        if target <= 6:
+            raise ValueError("Accessories exceed the triangle budget")
         simplified = candidate(largest, target, "quadric")
         before = trimesh.util.concatenate([simplified, *parts]) if args.diagnose_repair else None
         model = trimesh.util.concatenate([repair(simplified), *parts])
@@ -237,6 +288,9 @@ def main():
         collisions = collision_count(result)
         report["self_intersection_pairs"] = collisions
         report["method"] = "topology_first_local_self_boolean"
+        if fallback:
+            report["method"] = "proportional_parts_local_self_boolean"
+            report["fallback_reason"] = fallback
         accepted = accepted and collisions == 0
     report["decimation_overrides"] = DECIMATION
     report["geometry_gate_passed"] = accepted
