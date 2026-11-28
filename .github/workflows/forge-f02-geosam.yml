@@ -40,7 +40,8 @@ jobs:
       - name: Actual 2D prompt and geometry-aware 12-view inference
         working-directory: /tmp/geosam2
         run: |
-          python single_view_point_prompt_infer.py --data-root example/sample_00 --view-idx 0 --point-prompt-file example/sample_00/point_prompts_scale1.json --output-dir /tmp/geosam2-seed
+          python -c 'import json; p=json.load(open("example/sample_00/point_prompts_scale1.json")); json.dump([x for x in p if x["obj_id"]==1],open("/tmp/geosam2-prompt.json","w"))'
+          python single_view_point_prompt_infer.py --data-root example/sample_00 --view-idx 0 --point-prompt-file /tmp/geosam2-prompt.json --output-dir /tmp/geosam2-seed
           python inference.py --data-root example/sample_00 --mask-path /tmp/geosam2-seed/mask_view0000.npy --mask-view 0 --no-opposite-auto-segmentation --no-enable-postprocess --save-frame-vis --output-dir /tmp/geosam2-result
       - name: Verify source identity, real face labels and visual evidence
         run: |
