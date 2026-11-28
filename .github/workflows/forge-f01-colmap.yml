@@ -44,7 +44,7 @@ jobs:
           chmod +x "$interface" "$densify" "$mesh"
           export LD_LIBRARY_PATH="$(find /tmp/openmvs -type f -name '*.so*' -printf '%h\n' | sort -u | paste -sd: -):${LD_LIBRARY_PATH:-}"
           cd f01-colmap-evidence
-          "$interface" -i undistorted -o scene.mvs --image-folder undistorted/images
+          "$interface" -i "$PWD/undistorted" -o "$PWD/scene.mvs" --image-folder "$PWD/undistorted/images"
           "$densify" scene.mvs --resolution-level 0 --max-threads 4
           "$mesh" scene_dense.mvs -p scene_dense.ply --max-threads 4
           python - <<'PY'
