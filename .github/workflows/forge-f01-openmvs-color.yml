@@ -1,0 +1,53 @@
+name: F01 actual OpenMVS color projection
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/forge_dense_color.py','verification/f01/openmvs_color_probe.py','.github/workflows/forge-f01-openmvs-color.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  color:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-f01-colmap-evidence
+          run-id: 46092339226
+          github-token: ${{ github.token }}
+          path: /tmp/dense-source
+      - run: pip install pycolmap==3.12.1 numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84 numba==0.60.0
+      - run: |
+          curl -fL --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoRing.zip -o /tmp/dino.zip
+          mkdir /tmp/dino && unzip -q /tmp/dino.zip -d /tmp/dino
+      - name: Actual camera color projection without rerunning dense reconstruction
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+        run: python verification/f01/openmvs_color_probe.py /tmp/dino /tmp/dense-source f01-color-evidence
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Validate colored GLB
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const d='f01-color-evidence';fs.mkdirSync(d,{recursive:true});
+          const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(d+'/colored.glb')));
+          fs.writeFileSync(d+'/validation.json',JSON.stringify(v.issues,null,2));
+          if(v.issues.numErrors||v.issues.numWarnings)process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-color-evidence
+          path: f01-color-evidence/
