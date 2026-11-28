@@ -354,6 +354,27 @@ class BridgeTest(unittest.TestCase):
         with self.assertRaises(ProviderError):
             provider.notebook_exists("forge-f01-job-a", "forge-f01-input-a")
 
+    def test_provider_wait_limit_controls_timeout(self):
+        slow = Jobs(Path(self.directory.name) / "slow", TestProvider(), lambda model, _: model,
+                    max_wait=6 * 3600)
+        job = slow.add(image(), "png")
+        with slow.connect() as db:
+            db.execute("UPDATE jobs SET created = ?", (time.time() - MAX_WAIT - 1,))
+        handler = type("SlowHandler", (KaggleHandler,), {"jobs": slow})
+        with BoundedServer(("127.0.0.1", 0), handler) as server:
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                connection.request("GET", "/v1/kaggle-jobs/" + job,
+                                   headers={"Authorization": "Bearer " + TOKEN, "Origin": "null"})
+                body = json.loads(connection.getresponse().read())
+                connection.close()
+            finally:
+                server.shutdown()
+                thread.join()
+        self.assertEqual(body["status"], "waiting")   # 3 h old, but the provider allows 6 h
+
 
 def serve_fixture(model):
     provider = TestProvider(Path(model).read_bytes())

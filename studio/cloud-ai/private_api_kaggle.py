@@ -24,6 +24,9 @@ URL = "/v1/kaggle-jobs"
 MEDIA = {"image/png": ("PNG", "png"), "image/jpeg": ("JPEG", "jpg"), "image/webp": ("WEBP", "webp")}
 LOCAL_TERMINAL = ("ready", "error", "cancelled")
 MAX_WAIT = 3 * 3600
+# A private Kaggle CPU session runs for 3-4 h (live HARD10, 2026-11-28) under a
+# 5 h session limit, so its jobs are not reported as timed out before that.
+KAGGLE_CPU_WAIT = 6 * 3600
 QA = ROOT.parent.parent / "verification/f01/triposg_mobile_repair_qa.py"
 JOB_ROUTE = re.compile(URL + r"/([0-9a-f]{64})(/model)?")
 STATUS = {
@@ -43,7 +46,7 @@ KAGGLE_CPU_STATUS = {
     **STATUS,
     "waiting": "Kaggle CPU oturumu hazırlanıyor (GPU kotası kullanılmaz).",
     "queued": "Kaggle CPU oturumu başlatılıyor.",
-    "running": "Kaggle CPU oturumu maskeyi ve TripoSG modelini üretiyor (yaklaşık 45-75 dk).",
+    "running": "Kaggle CPU oturumu maskeyi ve TripoSG modelini üretiyor (3-4 saat sürebilir).",
 }
 LOCAL_STATUS = {
     **STATUS,
@@ -97,8 +100,9 @@ def mobile_model(raw, report):
 
 
 class Jobs:
-    def __init__(self, directory, provider, convert=mobile_model, messages=STATUS):
+    def __init__(self, directory, provider, convert=mobile_model, messages=STATUS, max_wait=MAX_WAIT):
         self.provider, self.convert, self.messages = provider, convert, messages
+        self.max_wait = max_wait
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
         if directory.stat().st_mode & 0o077:
             raise ValueError("Forge Kaggle state directory must be private")
@@ -171,7 +175,7 @@ class Jobs:
         # server-side and never include the original filename.
         slug = f"forge-f01-job-{job[:32]}"
         dataset = f"forge-f01-input-{job[:32]}"
-        aged = time.time() - row["created"] >= MAX_WAIT
+        aged = time.time() - row["created"] >= self.max_wait
         provider = self.provider
         try:
             if state == "waiting":
@@ -253,7 +257,7 @@ class KaggleHandler(PhotoHandler):
             self.respond(404, {"error": "İş bulunamadı."})
             return
         state = row["state"]
-        if state not in LOCAL_TERMINAL and time.time() - row["created"] >= MAX_WAIT:
+        if state not in LOCAL_TERMINAL and time.time() - row["created"] >= self.jobs.max_wait:
             state = "timed_out"
         self.respond(code, {"id": job, "status": state, "message": self.jobs.messages[state]})
 
@@ -331,8 +335,10 @@ def main():
             os.environ["FORGE_KAGGLE_EXISTING_SLUG"],
             accelerator=accelerator, bf16=os.getenv("FORGE_KAGGLE_BF16") == "1",
         )
+        cpu = accelerator == "cpu"
         jobs = Jobs(Path(os.environ["FORGE_KAGGLE_STATE_DIR"]), provider,
-                    messages=KAGGLE_CPU_STATUS if accelerator == "cpu" else STATUS)
+                    messages=KAGGLE_CPU_STATUS if cpu else STATUS,
+                    max_wait=KAGGLE_CPU_WAIT if cpu else MAX_WAIT)
         KaggleHandler.jobs = jobs
         threading.Thread(target=jobs.run, daemon=True).start()
     BoundedServer((os.getenv("FORGE_BIND", "127.0.0.1"), int(os.getenv("PORT", "8765"))),
