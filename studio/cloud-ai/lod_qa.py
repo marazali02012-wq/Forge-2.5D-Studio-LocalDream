@@ -6,6 +6,7 @@ from vtk.util.numpy_support import numpy_to_vtk,numpy_to_vtkIdTypeArray,vtk_to_n
 p=argparse.ArgumentParser()
 p.add_argument("input",type=pathlib.Path)
 p.add_argument("output",type=pathlib.Path)
+p.add_argument("--fit-editor",action="store_true",help="Prefer the largest safe component-preserving mesh within editor limits")
 args=p.parse_args()
 out=args.output
 out.mkdir(parents=True,exist_ok=True)
@@ -39,6 +40,8 @@ candidates=[("preserve_20k",20000),("preserve_12k",12000),("quadric_12k",12000)]
 # components only, NOT semantic object segmentation or F02.
 if len(m.faces)>60000:
     candidates.extend([("component_quadric_58k",58000),("component_quadric_40k",40000)])
+if args.fit_editor:
+    candidates=[("component_quadric_58k",58000),("component_quadric_40k",40000),("component_quadric_20k",20000)]
 def reduce_componentwise(budget):
     reduced=[]
     for p in source_parts:
@@ -78,7 +81,7 @@ for name,budget in candidates:
         r["bytes"]=dst.stat().st_size
     report.append(r)
 passed=[r for r in report if r["accepted"]]
-best=min(passed,key=lambda r:(r["faces"],r["p99_surface_error_pct"])) if passed else None
+best=(max(passed,key=lambda r:(r["faces"],-r["p99_surface_error_pct"])) if args.fit_editor else min(passed,key=lambda r:(r["faces"],r["p99_surface_error_pct"]))) if passed else None
 (out/"report.json").write_text(json.dumps({"original":{"faces":len(m.faces),"components":parts,"euler":m.euler_number},"candidates":report,"selected":best},indent=2))
 print((out/"report.json").read_text())
 assert best is not None,"No safe candidate: preserve original"
