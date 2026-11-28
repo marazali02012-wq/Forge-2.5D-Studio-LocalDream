@@ -1,4 +1,5 @@
 import hashlib,json,pathlib,struct,time,os,resource
+from math import ceil as np_ceil
 import torch
 from PIL import Image,ImageDraw
 from huggingface_hub import hf_hub_download
@@ -23,20 +24,36 @@ try:
     d.polygon([(196,211),(310,146),(310,258),(196,322)],fill=(32,63,118))
     sample=os.getenv("FORGE_IMAGE")
     if sample:
-        # Real independent humanoid test image from pinned upstream examples.
-        # Not a game asset and no commercial license assumed for the example.
-        from tsr.utils import resize_foreground,remove_background
+        # Generic foreground preparation, independent of subject category or pose.
+        from tsr.utils import remove_background
         import rembg
         from PIL import ImageOps
-        raw=Image.open(sample).convert("RGBA")
+        with Image.open(sample) as source:
+            raw=ImageOps.exif_transpose(source).convert("RGBA")
         raw.thumbnail((768,768))
+        if raw.getchannel("A").getextrema()==(0,0):
+            raise ValueError("empty transparent image")
         if raw.getchannel("A").getextrema()==(255,255):
             raw=remove_background(raw,rembg.new_session("u2netp"))
-        raw=resize_foreground(raw,0.85)
-        bg=Image.new("RGBA",raw.size,(128,128,128,255))
-        bg.alpha_composite(raw)
+        # Pillow bbox uses exclusive upper bounds, preserving the last
+        # occupied row/column unlike upstream resize_foreground.
+        alpha=raw.getchannel("A")
+        bounds=alpha.point(lambda a:255 if a>=8 else 0).getbbox()
+        if bounds is None:
+            raise ValueError("foreground not found")
+        fg=raw.crop(bounds)
+        if min(fg.size)<2:
+            raise ValueError("foreground too small")
+        size=max(fg.size)
+        canvas=max(size,int(np_ceil(size/0.85)))
+        padded=Image.new("RGBA",(canvas,canvas),(0,0,0,0))
+        padded.alpha_composite(fg,((canvas-fg.width)//2,(canvas-fg.height)//2))
+        bg=Image.new("RGBA",padded.size,(128,128,128,255))
+        bg.alpha_composite(padded)
         im=bg.convert("RGB")
         report["input_sha256"]=hashlib.sha256(pathlib.Path(sample).read_bytes()).hexdigest()
+        report["foreground_bbox"]=list(bounds)
+        report["foreground_size"]=list(fg.size)
     else:
         report["input"]="synthetic blue cube"
     im.save(out/"input.png")
