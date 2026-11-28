@@ -1,0 +1,1 @@
+2026-11-28: owner configured environment secret; run read-only private dataset visibility test. No GPU allocation or data transfer.
