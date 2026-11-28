@@ -1,0 +1,62 @@
+name: F01 Shap-E actual latent resolution comparison
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/shap_e_grid_probe.py','.github/workflows/forge-f01-text-grid.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  mesh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-f01-text-evidence
+          run-id: 46091269501
+          github-token: ${{ github.token }}
+          path: /tmp/actual-latents
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: forge-f01-shape-hf-v1
+      - name: Install CPU renderer dependencies
+        run: |
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install diffusers==0.35.2 transformers==4.46.3 accelerate==1.10.1 huggingface-hub==0.35.3 safetensors==0.6.2 numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0
+      - name: Re-extract real learned shapes at 96 and 128
+        env:
+          HF_HUB_DISABLE_XET: '1'
+          OPENBLAS_NUM_THREADS: '2'
+        run: python verification/f01/shap_e_grid_probe.py /tmp/actual-latents f01-grid-evidence
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Validate actual generated GLBs
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const d='f01-grid-evidence',out={};fs.mkdirSync(d,{recursive:true});
+          for(const i of ['00','01'])for(const g of [96,128]){
+            const n='text-'+i+'-grid'+g+'.glb';
+            if(!fs.existsSync(d+'/'+n)){out[n]={missing:true};continue;}
+            const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(d+'/'+n)));out[n]=v.issues;
+          }
+          fs.writeFileSync(d+'/validation.json',JSON.stringify(out,null,2));console.log(out);
+          if(Object.values(out).some(v=>v.missing||v.numErrors||v.numWarnings))process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-text-grid-evidence
+          path: f01-grid-evidence/
