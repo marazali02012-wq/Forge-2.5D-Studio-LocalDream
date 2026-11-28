@@ -1,0 +1,85 @@
+name: F01 Kaggle read-only GPU job reconciliation
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['.github/workflows/forge-f01-kaggle-gpu-status.yml']
+permissions:
+  contents: read
+concurrency:
+  group: forge-f01-kaggle-gpu-probe
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/forge-r70-surface-lab'
+    runs-on: ubuntu-24.04
+    environment: forge-kaggle
+    timeout-minutes: 6
+    steps:
+      - name: Inspect existing private GPU job without resubmitting
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, time, urllib.request, urllib.error
+          token=os.environ.get('KAGGLE_API_TOKEN','').strip()
+          if not token.startswith('KGAT_') or len(token)<=5 or any(not 33<=ord(c)<=126 for c in token):
+              raise SystemExit('Missing or malformed access token')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs):return None
+          opener=urllib.request.build_opener(NoRedirect())
+          def rpc(service,method,body):
+              url='https://api.kaggle.com/v1/'+service+'/'+method
+              req=urllib.request.Request(url,data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'},method='POST')
+              try:
+                  with opener.open(req,timeout=45) as r:
+                      data=json.loads(r.read(4*1024*1024))
+                      print(method+': HTTP '+str(r.status),flush=True)
+              except urllib.error.HTTPError as e:raise SystemExit(method+': HTTP '+str(e.code)) from None
+              except Exception as e:raise SystemExit(method+': '+type(e).__name__) from None
+              if not isinstance(data,dict) or data.get('error') or data.get('errorMessage') or (isinstance(data.get('code'),int) and data['code']>=400):
+                  raise SystemExit(method+': API error or unexpected schema')
+              return data
+          d='datasets.DatasetApiService';k='kernels.KernelsApiService'
+          data=rpc(d,'ListDatasets',{'group':'DATASET_SELECTION_GROUP_MY_PRIVATE','pageSize':100})
+          refs={row.get('ref','') for row in data.get('datasets',[]) if row.get('isPrivate') is True and re.fullmatch(r'[a-zA-Z0-9_-]+/forge-warrior-test',row.get('ref',''))}
+          if len(refs)!=1:raise SystemExit('Owner check failed; no job submitted')
+          owner=refs.pop().split('/')[0]
+          run='46112405912'
+          slug='forge-f01-gpu-probe-'+run
+          target={'userName':owner,'kernelSlug':slug}
+          m=rpc(k,'GetKernel',target).get('metadata',{})
+          if m.get('isPrivate') is not True or m.get('enableGpu') is not True:
+              raise SystemExit('Job privacy/GPU metadata not confirmed')
+          version=m.get('currentVersionNumber')
+          print('PRIVATE_GPU_METADATA_OK; version verified: '+str(isinstance(version,int) and version>0),flush=True)
+          if isinstance(version,int) and version>0:target['versionLabel']=str(version)
+          for i in range(8):
+              status=rpc(k,'GetKernelSessionStatus',target).get('status')
+              if status not in ('QUEUED','RUNNING','COMPLETE','ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED','NEW_SCRIPT'):
+                  raise SystemExit('Unexpected job status')
+              print('GPU_JOB_STATUS: '+status,flush=True)
+              if status=='COMPLETE':
+                  files=rpc(k,'ListKernelSessionOutput',dict(target,pageSize=100)).get('files',[])
+                  hits=[x for x in files if x.get('fileName')=='forge_gpu_probe.json']
+                  if len(hits)!=1:raise SystemExit('GPU output missing or ambiguous')
+                  print('GPU_JOB_OUTPUT_LISTED',flush=True)
+                  # Only download the synthetic diagnostic; no bearer sent to output host.
+                  from urllib.parse import urlsplit
+                  url=hits[0].get('url','');u=urlsplit(url)
+                  host=u.hostname or ''
+                  if u.scheme!='https' or u.username or u.password or u.port not in (None,443) or not (host=='storage.googleapis.com' or host.endswith('.storage.googleapis.com') or host=='kaggleusercontent.com' or host.endswith('.kaggleusercontent.com') or host=='www.kaggle.com' or host=='api.kaggle.com'):
+                      raise SystemExit('Output host unverified; bytes not downloaded')
+                  try:
+                      with opener.open(url,timeout=30) as resp:raw=resp.read(16385)
+                      if len(raw)>16384:raise ValueError('size')
+                      out=json.loads(raw)
+                  except Exception as e:raise SystemExit('Output transfer not verified: '+type(e).__name__) from None
+                  devices=out.get('devices',[])
+                  if out.get('run_id')!=run or out.get('cuda') is not True or len(devices)!=2 or not all('T4' in x.get('name','') and x.get('sum_of_squares')==357389824 for x in devices):
+                      raise SystemExit('GPU output verification failed')
+                  print('GPU_REMOTE_COMPUTE_AND_OUTPUT_TRANSFER_OK: two T4 devices, run ID and results matched',flush=True)
+                  break
+              if status in ('ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED'):raise SystemExit('GPU job did not complete')
+              if i<7:time.sleep(10)
+          else:print('GPU_JOB_PENDING; no resubmission made',flush=True)
+          PY
