@@ -52,7 +52,10 @@ jobs:
               raise SystemExit('Job privacy/GPU metadata not confirmed')
           version=m.get('currentVersionNumber')
           print('PRIVATE_GPU_METADATA_OK; version verified: '+str(isinstance(version,int) and version>0),flush=True)
-          if isinstance(version,int) and version>0:target['versionLabel']=str(version)
+          if not isinstance(version,int) or version<1:raise SystemExit('Notebook version absent')
+          # SDK status defaults to latest version when no versionLabel is sent.
+          # Unique probe slug has exactly one submitted version; no new submission.
+          if version!=1:raise SystemExit('Unexpected version; refusing latest lookup')
           for i in range(8):
               status=rpc(k,'GetKernelSessionStatus',target).get('status')
               if status not in ('QUEUED','RUNNING','COMPLETE','ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED','NEW_SCRIPT'):
