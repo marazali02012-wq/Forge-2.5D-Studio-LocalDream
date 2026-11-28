@@ -1,0 +1,371 @@
+<title>Forge Cihaz Testi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: one narrow column for a phone held upright; canvas first, numbers below. */
+  :root {
+    --bg: #f3f5f2;
+    --surface: #ffffff;
+    --ink: #17201b;
+    --muted: #5b675f;
+    --line: #d5dcd6;
+    --accent: #1f7a5a;
+    --accent-ink: #ffffff;
+    --warn: #a15c07;
+    --bad: #b3261e;
+    --good: #1f7a5a;
+    --stage: #202824;
+    --font-display: "Space Grotesk", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, sans-serif;
+    --font-data: "JetBrains Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121714; --surface: #1a211d; --ink: #e6ece7; --muted: #9aa69e; --line: #2c3631;
+      --accent: #4cc392; --accent-ink: #0c1410; --warn: #e0a24a; --bad: #f2827a; --good: #4cc392;
+      --stage: #0b0f0d; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121714; --surface: #1a211d; --ink: #e6ece7; --muted: #9aa69e; --line: #2c3631;
+    --accent: #4cc392; --accent-ink: #0c1410; --warn: #e0a24a; --bad: #f2827a; --good: #4cc392;
+    --stage: #0b0f0d; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); line-height: 1.5; }
+  main {
+    max-width: 760px; margin: 0 auto; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr);
+    padding-block: 20px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  h1 { font-family: var(--font-display); font-size: 1.6rem; margin: 0; text-wrap: balance; }
+  h2 { font-family: var(--font-display); font-size: 1.1rem; margin: 0 0 8px; }
+  p { margin: 0; max-width: 65ch; }
+  .muted { color: var(--muted); }
+  .stage { position: relative; background: var(--stage); border-radius: 10px; overflow: hidden; aspect-ratio: 4 / 3; max-width: 100%; }
+  .stage canvas { width: 100%; height: 100%; display: block; }
+  .hud {
+    position: absolute; left: 10px; top: 10px; right: 10px; display: flex; justify-content: space-between; gap: 8px;
+    font-family: var(--font-data); font-size: 0.8rem; color: #e6ece7; pointer-events: none;
+  }
+  .hud span { background: rgba(0, 0, 0, 0.45); padding: 2px 8px; border-radius: 6px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button, .file {
+    font: inherit; font-weight: 600; border-radius: 8px; padding: 10px 16px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: 0.55; cursor: not-allowed; }
+  button:focus-visible, .file:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .file input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .status { font-family: var(--font-data); font-size: 0.85rem; color: var(--muted); min-height: 1.4em; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+  .pill { font-family: var(--font-data); font-size: 0.75rem; padding: 1px 8px; border-radius: 99px; border: 1px solid currentColor; }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .device { font-family: var(--font-data); font-size: 0.78rem; color: var(--muted); overflow-wrap: anywhere; }
+  .empty { padding: 14px; color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono&family=Space+Grotesk:wght@600&display=swap">
+
+<main>
+  <header style="display:grid; gap:6px">
+    <h1>Forge Cihaz Testi</h1>
+    <p class="muted">F01 mobil GLB adaylarını bu telefonda gerçek WebGL ile çizer ve kare hızını ölçer. Sonuçlar kaydedilir, böylece Forge geliştirmesinde kullanılabilir. Ekran açık kalsın, test sırasında telefonu kullanmayın.</p>
+  </header>
+
+  <section class="stage" aria-label="3D çizim alanı">
+    <canvas id="view"></canvas>
+    <div class="hud"><span id="hudModel">Hazır</span><span id="hudFps">— FPS</span></div>
+  </section>
+
+  <section class="controls">
+    <button id="start" class="primary" type="button">Testi başlat</button>
+    <label class="file" for="localGlb">Telefondaki GLB ile dene<input id="localGlb" type="file" accept=".glb,model/gltf-binary"></label>
+    <span class="status" id="status" role="status" aria-live="polite">Modeller yükleniyor…</span>
+  </section>
+
+  <section>
+    <h2>Bu çalıştırma</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Model</th><th>Üçgen</th><th>Yükleme</th><th>Ort. FPS</th><th>p95 kare</th><th>&gt;33 ms</th></tr></thead>
+        <tbody id="current"><tr><td colspan="6" class="empty">Testi başlatınca her model 10 saniye çizilir; sonuçlar burada görünür.</td></tr></tbody>
+      </table>
+    </div>
+    <p class="device" id="device"></p>
+  </section>
+
+  <section>
+    <h2>Kayıtlı çalıştırmalar</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Zaman</th><th>Cihaz</th><th>Modeller</th><th>En düşük FPS</th></tr></thead>
+        <tbody id="history"><tr><td colspan="4" class="empty">Henüz kayıt yok. İlk testi bu telefonda başlatın.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+const $ = id => document.getElementById(id);
+const SECONDS = 10;
+let models = [];
+
+const canvas = $('view');
+const renderer = new THREE.WebGLRenderer({canvas, antialias: true, powerPreference: 'high-performance'});
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(dpr);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#202824');
+scene.add(new THREE.HemisphereLight('#ffffff', '#3a4440', 1.4));
+const sun = new THREE.DirectionalLight('#ffffff', 2.0);
+sun.position.set(2, 3, 4);
+scene.add(sun);
+const camera = new THREE.PerspectiveCamera(35, 4 / 3, 0.01, 100);
+let current = null;
+
+function resize() {
+  const {width, height} = canvas.getBoundingClientRect();
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(canvas);
+
+function gpuInfo() {
+  const gl = renderer.getContext();
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  return {
+    renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    vendor: ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
+    webgl: renderer.capabilities.isWebGL2 ? 2 : 1,
+    maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+  };
+}
+const device = {
+  ua: navigator.userAgent,
+  cores: navigator.hardwareConcurrency || null,
+  memoryGB: navigator.deviceMemory || null,
+  screen: `${screen.width}x${screen.height}`,
+  dpr: window.devicePixelRatio || 1,
+  renderDpr: dpr,
+  ...gpuInfo(),
+};
+$('device').textContent = `${device.renderer} · ${device.cores ?? '?'} çekirdek · ${device.memoryGB ?? '?'} GB · ekran ${device.screen} @${device.dpr}x (çizim ${dpr}x) · WebGL ${device.webgl}`;
+
+function show(gltf) {
+  if (current) scene.remove(current);
+  current = gltf.scene;
+  let triangles = 0;
+  current.traverse(o => {
+    if (!o.isMesh) return;
+    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    o.material = new THREE.MeshStandardMaterial({color: '#cfc8bb', roughness: 0.7, side: THREE.DoubleSide});
+    triangles += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+  });
+  const box = new THREE.Box3().setFromObject(current);
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = box.getBoundingSphere(new THREE.Sphere()).radius;
+  current.position.sub(center);
+  const pivot = new THREE.Group();
+  pivot.add(current);
+  current = pivot;
+  scene.add(current);
+  camera.position.set(0, radius * 0.4, radius * 3.2);
+  camera.lookAt(0, 0, 0);
+  return triangles;
+}
+
+function measure(seconds, label) {
+  return new Promise(resolve => {
+    const deltas = [];
+    let last = null, start = null, shown = 0;
+    function frame(t) {
+      if (start === null) start = t;
+      if (last !== null) deltas.push(t - last);
+      last = t;
+      current.rotation.y = ((t - start) / 1000) * 0.9;
+      renderer.render(scene, camera);
+      if (t - shown > 500 && deltas.length) {
+        const recent = deltas.slice(-30);
+        $('hudFps').textContent = `${(1000 / (recent.reduce((a, b) => a + b, 0) / recent.length)).toFixed(0)} FPS`;
+        shown = t;
+      }
+      if (t - start < seconds * 1000) requestAnimationFrame(frame);
+      else {
+        const sorted = [...deltas].sort((a, b) => a - b);
+        const q = p => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+        resolve({
+          frames: deltas.length,
+          fps: +(deltas.length / ((t - start) / 1000)).toFixed(1),
+          p50Ms: +q(0.5).toFixed(1), p95Ms: +q(0.95).toFixed(1), worstMs: +sorted[sorted.length - 1].toFixed(1),
+          over33: deltas.filter(d => d > 33.4).length,
+        });
+      }
+    }
+    $('hudModel').textContent = label;
+    requestAnimationFrame(frame);
+  });
+}
+
+function rate(fps) {
+  return fps >= 50 ? ['good', 'akıcı'] : fps >= 30 ? ['warn', 'kabul'] : ['bad', 'yavaş'];
+}
+
+function addRow(row) {
+  const body = $('current');
+  if (body.querySelector('.empty')) body.textContent = '';
+  const tr = document.createElement('tr');
+  const [cls, word] = rate(row.fps);
+  const cells = [row.model, row.triangles.toLocaleString('tr-TR'), `${row.loadMs} ms`, null,
+    `${row.p95Ms} ms`, `${row.over33}`];
+  cells.forEach((text, i) => {
+    const td = document.createElement('td');
+    if (i === 3) {
+      const pill = document.createElement('span');
+      pill.className = `pill ${cls}`;
+      pill.textContent = `${row.fps} · ${word}`;
+      td.append(pill);
+    } else td.textContent = text;
+    tr.append(td);
+  });
+  body.append(tr);
+}
+
+async function runOne(name, bytes) {
+  const t0 = performance.now();
+  const gltf = await new GLTFLoader().parseAsync(bytes, '');
+  const triangles = show(gltf);
+  renderer.render(scene, camera);
+  const loadMs = Math.round(performance.now() - t0);
+  const result = await measure(SECONDS, name);
+  const row = {model: name, triangles, loadMs, ...result};
+  addRow(row);
+  return row;
+}
+
+let db = null;
+async function save(rows, kind) {
+  if (!db) {
+    $('status').textContent = 'Sonuçlar bu görünümde kaydedilemedi (oturum açık değil). Tablodaki değerler geçerlidir.';
+    return;
+  }
+  try {
+    await db.collection('runs').add({ts: new Date().toISOString(), kind, device, seconds: SECONDS, results: rows});
+    $('status').textContent = 'Test bitti ve kaydedildi.';
+  } catch (e) {
+    $('status').textContent = `Sonuç kaydedilemedi (${e.code || 'hata'}). Tablodaki değerler geçerlidir.`;
+  }
+}
+
+async function withWakeLock(task) {
+  let lock = null;
+  try { lock = await navigator.wakeLock?.request('screen'); } catch {}
+  try { return await task(); } finally { try { await lock?.release(); } catch {} }
+}
+
+$('start').onclick = () => withWakeLock(async () => {
+  $('start').disabled = true;
+  $('current').textContent = '';
+  const rows = [];
+  try {
+    for (const m of models) {
+      $('status').textContent = `${m.name} ölçülüyor (${SECONDS} sn)…`;
+      const response = await fetch(m.file);
+      if (!response.ok) throw new Error(`${m.name} indirilemedi (HTTP ${response.status})`);
+      // Artifacts serve GLB as base64 text; decode back to the exact bytes.
+      const bytes = m.encoding === 'base64'
+        ? Uint8Array.from(atob((await response.text()).trim()), c => c.charCodeAt(0)).buffer
+        : await response.arrayBuffer();
+      rows.push(await runOne(m.name, bytes));
+    }
+    await save(rows, 'forge-models');
+  } catch (e) {
+    $('status').textContent = `Test durdu: ${e.message || e}`;
+  } finally {
+    $('start').disabled = false;
+    $('hudModel').textContent = 'Hazır';
+  }
+});
+
+$('localGlb').onchange = () => withWakeLock(async () => {
+  const file = $('localGlb').files[0];
+  if (!file) return;
+  $('start').disabled = true;
+  try {
+    $('status').textContent = `${file.name} ölçülüyor (dosya telefondan çıkmaz)…`;
+    const row = await runOne('Yerel dosya', await file.arrayBuffer());
+    await save([row], 'local-file');
+  } catch (e) {
+    $('status').textContent = `Dosya açılamadı: ${e.message || e}`;
+  } finally {
+    $('start').disabled = false;
+    $('localGlb').value = '';
+  }
+});
+
+function renderHistory(snap) {
+  const body = $('history');
+  body.textContent = '';
+  if (snap.empty) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4; td.className = 'empty';
+    td.textContent = 'Henüz kayıt yok. İlk testi bu telefonda başlatın.';
+    tr.append(td); body.append(tr);
+    return;
+  }
+  for (const doc of snap.docs) {
+    const d = doc.data();
+    const results = Array.isArray(d.results) ? d.results : [];
+    const minFps = results.length ? Math.min(...results.map(r => Number(r.fps) || 0)) : 0;
+    const tr = document.createElement('tr');
+    const when = new Date(String(d.ts || ''));
+    const cells = [isNaN(when) ? '—' : when.toLocaleString('tr-TR'),
+      String(d.device?.renderer || '—').slice(0, 40), String(results.length), null];
+    cells.forEach((text, i) => {
+      const td = document.createElement('td');
+      if (i === 3) {
+        const [cls] = rate(minFps);
+        const pill = document.createElement('span');
+        pill.className = `pill ${cls}`;
+        pill.textContent = minFps.toFixed(1);
+        td.append(pill);
+      } else td.textContent = text;
+      tr.append(td);
+    });
+    body.append(tr);
+  }
+}
+
+async function boot() {
+  resize();
+  try {
+    models = await (await fetch('models/manifest.json')).json();
+    $('status').textContent = `${models.length} model hazır. Testi başlatın.`;
+  } catch {
+    $('status').textContent = 'Model listesi yüklenemedi. Telefondaki bir GLB ile deneyebilirsiniz.';
+    $('start').disabled = true;
+  }
+  db = await window.claude?.use?.('db') ?? null;
+  if (!db) return;
+  const timer = setTimeout(() => {
+    if ($('history').querySelector('.empty')) $('history').querySelector('.empty').textContent = 'Kayıtlara henüz ulaşılamadı.';
+  }, 10000);
+  db.collection('runs').orderBy('ts', 'desc').limit(20).onSnapshot(snap => {
+    if (!snap.metadata.fromCache) clearTimeout(timer);
+    renderHistory(snap);
+  }, () => clearTimeout(timer));
+}
+boot();
+</script>
