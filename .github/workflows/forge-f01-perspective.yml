@@ -15,8 +15,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: forge-photo-pip-v1
       - name: Install CPU geometry dependencies
-        run: pip install numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0
+        run: pip install numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84
       - name: Download official real photo calibration benchmark
         run: |
           curl --fail --location --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoSparseRing.zip -o /tmp/dino.zip
