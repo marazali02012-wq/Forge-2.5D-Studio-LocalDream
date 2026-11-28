@@ -68,7 +68,8 @@ def propagate(predictor,frames,first_mask,nfaces,detail=.75):
             a,b=face_observation(ids,mask,nfaces)
             positive+=a;negative+=b;results[i]=mask
             # A conflict is not a confident anchor. Seed is never overwritten.
-            p=(p|a)&~(n|b);n=(n|b)&~(p|a)
+            allp=p|a;alln=n|b
+            p=allp&~alln;n=alln&~allp
             p=(p|fixed_pos)&~fixed_neg;n=(n|fixed_neg)&~fixed_pos
             audit.append(dict(view=i,accepted=True,recall=recall,spill=spill,score=float(scores[k]),positive_faces=int(a.sum()),negative_faces=int(b.sum())))
     total=positive+negative
