@@ -1,0 +1,55 @@
+name: F02 GeoSAM2 official CPU proof
+on:
+  push:
+    branches: [forge-f02-segmentation-lab]
+    paths: ['studio/f02/geosam_adapter.py','verification/f02/geosam_demo_qa.py','.github/workflows/forge-f02-geosam.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: forge-f02-geosam
+  cancel-in-progress: true
+jobs:
+  official-demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GEOSAM2_BUILD_CUDA: '0'
+      OPENCV_IO_ENABLE_OPENEXR: '1'
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      OPENBLAS_NUM_THREADS: '2'
+      CUDA_VISIBLE_DEVICES: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated official CPU engine
+        run: |
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84 hydra-core==1.3.2 iopath==0.1.10 tqdm==4.67.1 numba==0.60.0 matplotlib==3.9.2 pandas==2.2.3 ninja==1.11.1.3
+          git init /tmp/geosam2
+          git -C /tmp/geosam2 fetch --depth 1 https://github.com/VAST-AI-Research/GeoSAM2.git b5de23c60ab487d407b623d394a1614f9714761c
+          git -C /tmp/geosam2 checkout FETCH_HEAD
+          cd /tmp/geosam2
+          pip install --no-build-isolation --no-deps -e .
+          mkdir -p ckpt
+          curl -fL --retry 2 --max-time 300 --max-filesize 700000000 https://huggingface.co/VAST-AI/GeoSAM2/resolve/main/geosam2.pt -o ckpt/geosam2.pt
+          echo '2e391c0d9455fe92b69d61cdc94754d9b8081b9b541d09e1b6a3a55ebf6c6de0  ckpt/geosam2.pt' | sha256sum -c -
+      - name: Actual 2D prompt and geometry-aware 12-view inference
+        working-directory: /tmp/geosam2
+        run: |
+          python single_view_point_prompt_infer.py --data-root example/sample_00 --view-idx 0 --point-prompt-file example/sample_00/point_prompts_scale1.json --output-dir /tmp/geosam2-seed
+          python inference.py --data-root example/sample_00 --mask-path /tmp/geosam2-seed/mask_view0000.npy --mask-view 0 --no-opposite-auto-segmentation --no-enable-postprocess --save-frame-vis --output-dir /tmp/geosam2-result
+      - name: Verify source identity, real face labels and visual evidence
+        run: |
+          python verification/f02/geosam_demo_qa.py /tmp/geosam2 /tmp/geosam2/example/sample_00/mesh.glb /tmp/geosam2-result f02-geosam-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f02-geosam-official-evidence
+          path: |
+            f02-geosam-evidence/
+            /tmp/geosam2-seed/
+            /tmp/geosam2-result/
