@@ -56,7 +56,7 @@ jobs:
       - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
         if: always()
       - name: Independent final GLB validation
-        if: always()
+        if: ${{ success() && hashFiles('f01-temple-evidence/model.glb') != '' }}
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';import validator from 'gltf-validator';
@@ -72,6 +72,8 @@ jobs:
             f01-temple-evidence/*.json
             f01-temple-evidence/model.glb
             f01-temple-evidence/model-views.png
+            f01-temple-evidence/rejected-silhouette.glb
+            f01-temple-evidence/silhouette_diagnostics/*.png
             f01-temple-evidence/dense.glb
             f01-temple-evidence/lod/report.json
             temple-input-evidence/photos.jpg
