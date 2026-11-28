@@ -1,0 +1,62 @@
+name: F01 real multi-photo private menu
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['studio/cloud-ai/private_api_photos.py','studio/cloud-ai/f01_photos_patch.mjs','verification/f01/photo_menu_qa.mjs','.github/workflows/forge-f01-photo-menu.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  photos:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install pycolmap==3.12.1 numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84 numba==0.60.0 vtk==9.6.2
+          python -m py_compile verification/f01/user_photo_worker.py
+      - name: Real photos only and verified external OpenMVS
+        run: |
+          curl -fL --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoRing.zip -o /tmp/dino.zip
+          mkdir /tmp/dino /tmp/userphotos
+          unzip -q /tmp/dino.zip -d /tmp/dino
+          find /tmp/dino -type f -iname '*.png' -exec cp {} /tmp/userphotos/ \;
+          test "$(find /tmp/userphotos -type f | wc -l)" = 48
+          test "$(find /tmp/userphotos -type f ! -iname '*.png' | wc -l)" = 0
+          curl -fL --retry 2 --max-time 120 --max-filesize 170000000 https://github.com/cdcseacave/openMVS/releases/download/v2.4.0/OpenMVS_Ubuntu_x64.zip -o /tmp/openmvs.zip
+          echo '7104ae1ddd6ca38fbca9e0e4a70b20af59e21e0b497eb7181c864fbf38ca8d00  /tmp/openmvs.zip' | sha256sum -c -
+          mkdir /tmp/openmvs && unzip -q /tmp/openmvs.zip -d /tmp/openmvs
+          interface="$(find /tmp/openmvs -type f -name InterfaceCOLMAP -print -quit)"
+          echo "OPENMVS_BIN=$(dirname "$interface")" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$(find /tmp/openmvs -type f -name '*.so*' -printf '%h\n' | sort -u | paste -sd: -)" >> "$GITHUB_ENV"
+          chmod +x "$(dirname "$interface")/InterfaceCOLMAP" "$(dirname "$interface")/DensifyPointCloud" "$(dirname "$interface")/ReconstructMesh"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts playwright@1.56.1 gltf-validator@2.0.0-dev.3.10
+      - run: npx playwright install chromium
+      - run: node studio/cloud-ai/ai_import_patch.mjs && node studio/cloud-ai/connected_patch.mjs && node studio/cloud-ai/f01_text_patch.mjs && node studio/cloud-ai/f01_photos_patch.mjs
+      - name: Actual browser upload to private photo worker
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+          FORGE_MULTIVIEW_ENABLED: '1'
+          FORGE_ALLOWED_ORIGINS: http://127.0.0.1:8766
+        run: |
+          export FORGE_API_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$FORGE_API_TOKEN"
+          export FORGE_OPENMVS_BIN="$OPENMVS_BIN"
+          python -m py_compile studio/cloud-ai/private_api_photos.py
+          python studio/cloud-ai/private_api_photos.py > /tmp/forge-photo-api.log 2>&1 &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8765/health && break; sleep 1; done
+          node verification/f01/photo_menu_qa.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-photo-menu-evidence
+          path: |
+            Forge_R70_34_F01_Multiview_Experimental.html
+            f01-photo-menu-evidence/
