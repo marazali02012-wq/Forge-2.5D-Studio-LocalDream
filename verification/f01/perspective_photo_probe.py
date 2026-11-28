@@ -28,31 +28,27 @@ def read_middlebury(root,diagnostics):
         bg=np.median(border,axis=0)
         delta=np.linalg.norm(rgb-bg,axis=2)
         border_delta=np.linalg.norm(border-bg,axis=1)
-        # Actual diagnostic dinoSR0001 shows a dim brown support strip
-        # joining the border to the object below RGB distance 40.
-        # Prefer the lowest threshold that separates a dominant component.
-        base=max(40.,float(np.quantile(border_delta,.90))+8.)
-        mask=np.zeros(delta.shape,bool);best=0;counts=np.array([0]);edges=set()
-        threshold=base
-        for threshold in (base,base+10,base+20,base+30):
-            fg=delta>threshold
-            cc=label(fg);counts=np.bincount(cc.ravel());counts[0]=0
-            edges=set(np.unique(np.concatenate([cc[0],cc[-1],cc[:,0],cc[:,-1]])).tolist())
-            valid=[k for k in range(1,len(counts)) if k not in edges]
-            best=max(valid,key=lambda k:counts[k],default=0)
-            mask=(cc==best) if best else np.zeros(cc.shape,bool)
-            if .002<mask.mean()<.8 and counts[best]>=.85*counts.max():break
+        # Actual dinoSR0002 is genuinely cropped at the top: the main
+        # subject touches the sensor boundary. Keep that observed silhouette,
+        # but treat pixels outside the camera image as unknown during carving.
+        threshold=max(40.,float(np.quantile(border_delta,.90))+8.)
+        fg=delta>threshold
+        cc=label(fg);counts=np.bincount(cc.ravel());counts[0]=0
+        best=int(counts.argmax())
+        mask=(cc==best) if best else np.zeros(delta.shape,bool)
+        edges=set(np.unique(np.concatenate([cc[0],cc[-1],cc[:,0],cc[:,-1]])).tolist())
+        clipped=best in edges
         # Preserve silhouette holes and record all rejected border material.
         preview=Image.new("RGB",(im.shape[1]*2,im.shape[0]))
         preview.paste(Image.fromarray(im),(0,0))
         overlay=im.copy();overlay[~mask]=(overlay[~mask].astype(np.float32)*.35).astype(np.uint8)
         preview.paste(Image.fromarray(overlay),(im.shape[1],0))
         preview.save(diagnostics/(Path(name).stem+".jpg"))
-        print(json.dumps(dict(view=name,background=bg.tolist(),threshold=threshold,area=float(mask.mean()),largest=int(counts.max()),selected=int(counts[best]),excluded_border_pixels=int(sum(counts[k] for k in edges if k>0)))),flush=True)
-        if not .002<mask.mean()<.8 or counts[best]<.85*counts.max():raise ValueError("bad/clipped foreground "+name)
+        print(json.dumps(dict(view=name,background=bg.tolist(),threshold=threshold,area=float(mask.mean()),largest=int(counts.max()),selected=int(counts[best]),clipped=bool(clipped))),flush=True)
+        if not .002<mask.mean()<.8:raise ValueError("bad foreground "+name)
         ys,xs=np.where(mask);uv=np.array([xs.mean(),ys.mean(),1.])
         C=-R.T@t;ray=R.T@np.linalg.solve(K,uv);ray/=np.linalg.norm(ray)
-        data.append(dict(name=name,P=P,C=C,ray=ray,mask=mask,im=im,hash=hashlib.sha256((file.parent/name).read_bytes()).hexdigest()))
+        data.append(dict(name=name,P=P,C=C,ray=ray,mask=mask,clipped=bool(clipped),im=im,hash=hashlib.sha256((file.parent/name).read_bytes()).hexdigest()))
     if not 6<=len(data)<=64:raise ValueError("invalid number of cameras")
     return data
 
@@ -77,14 +73,20 @@ def reconstruct(data,n=96):
     if not np.isfinite(extent) or extent<=0:raise ValueError("invalid extent")
     for retry in range(3):
         axis=np.linspace(-extent/2,extent/2,n);field=np.full(n**3,np.inf,dtype=np.float32)
+        seen=np.zeros(n**3,np.uint8)
         for r in data:
             mask=r["mask"];d=(distance_transform_edt(mask)-distance_transform_edt(~mask)).astype(np.float32)
             for start in range(0,len(field),65536):
                 i=np.arange(start,min(start+65536,len(field)));v=np.column_stack([axis[i//(n*n)],axis[i//n%n],axis[i%n]])+center
                 u,w,z=project(r["P"],v)
-                q=map_coordinates(d,[w,u],order=1,mode="constant",cval=-1e3,prefilter=False)
-                field[i]=np.minimum(field[i],np.where(z>0,q,-1e3))
-        field=field.reshape((n,)*3)
+                h,k=mask.shape
+                visible=(z>0)&(u>=0)&(u<=k-1)&(w>=0)&(w<=h-1)
+                q=map_coordinates(d,[w,u],order=1,mode="nearest",prefilter=False)
+                # Outside image is unobserved, not background. Require each
+                # surviving voxel to be observed by >= 3 training cameras.
+                field[i]=np.minimum(field[i],np.where(visible,q,np.inf))
+                seen[i]+=visible.astype(np.uint8)
+        field=np.where(seen>=3,field,-8.).reshape((n,)*3)
         if field.max()<=0:raise ValueError("empty intersection")
         if any(np.take(field,k,axis=i).max()>=0 for i in range(3) for k in (0,n-1)):
             extent*=1.5;continue
@@ -146,7 +148,7 @@ def main():
     sheet.save(a.output/"mesh-views.png")
     m.export(a.output/"model.glb",include_normals=True);reload=trimesh.load(a.output/"model.glb",force="mesh",process=False)
     assert len(reload.faces)==len(m.faces) and reload.visual.kind=="vertex" and np.isfinite(reload.vertices).all()
-    report=dict(scope="real calibrated perspective visual hull; controlled dark backdrop; not arbitrary-photo AI",train=len(train),heldout=len(test),heldout_iou=iou,mean_iou=float(np.mean(iou)),vertices=len(m.vertices),faces=len(m.faces),watertight=bool(m.is_watertight),vertex_color_coverage=coverage,seconds=time.monotonic()-t,input_hashes=[r["hash"] for r in data])
+    report=dict(scope="real calibrated perspective visual hull; controlled dark backdrop; not arbitrary-photo AI",train=len(train),heldout=len(test),cropped_views=sum(r["clipped"] for r in data),heldout_iou=iou,mean_iou=float(np.mean(iou)),vertices=len(m.vertices),faces=len(m.faces),watertight=bool(m.is_watertight),vertex_color_coverage=coverage,seconds=time.monotonic()-t,input_hashes=[r["hash"] for r in data])
     (a.output/"report.json").write_text(json.dumps(report,indent=2));print(report)
     if np.mean(iou)<.85:raise SystemExit("held-out silhouette acceptance failed")
 if __name__=="__main__":main()
