@@ -2,7 +2,7 @@ name: F01 real photo and text models in Forge editor
 on:
   push:
     branches: [forge-r70-surface-lab]
-    paths: ['verification/f01/real_editor_import_qa.mjs','.github/workflows/forge-f01-editor-import.yml']
+    paths: ['studio/cloud-ai/ai_import_patch.mjs','verification/f01/real_editor_import_qa.mjs','.github/workflows/forge-f01-editor-import.yml']
   workflow_dispatch:
 permissions:
   contents: read
