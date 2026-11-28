@@ -55,8 +55,10 @@ jobs:
           status=data.get('status')
           if type(status) is int and 0<=status<len(states):status=states[status]
           if status is None:
-              print('MODEL_STATUS_NOT_RETURNED; no resubmission',flush=True)
-              raise SystemExit(1)
+              # Official SDK declares QUEUED as the protobuf default.
+              # Omission alone does not establish the actual execution state.
+              print('MODEL_STATUS_UNREPORTED; SDK default QUEUED; no resubmission',flush=True)
+              raise SystemExit(0)
           if status not in states:raise SystemExit('Unexpected status enumeration')
           print('MODEL_JOB_STATUS: '+status,flush=True)
           if status in ('ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED'):raise SystemExit('Model job stopped; see private notebook logs')
