@@ -1,0 +1,146 @@
+{
+ "note": "BiRefNet soft alpha, no binarisation; SAM2.1 tiny occluder bridge where two large parts are split. Visual review: verification/f01/evidence/hard10-masks-all.jpg",
+ "cases": {
+  "02-cafe": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 2,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 21227,
+   "soft_pixels": 1526,
+   "bridge": {
+    "large_parts": 2,
+    "occluder": "attached",
+    "gap_px": 33.8,
+    "sam_score": 0.923,
+    "occluder_area_ratio": 0.237,
+    "note": "computed by bridge_occluders on the BiRefNet alpha (bridged.png)"
+   }
+  },
+  "03-peacock": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 10,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 242213,
+   "soft_pixels": 8957,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed",
+    "note": "mask made without --sam2-checkpoint; bridge_occluders run separately on the same alpha"
+   }
+  },
+  "04-dragon": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 5,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 94141,
+   "soft_pixels": 18334,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed"
+   }
+  },
+  "05-bicycle": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 17,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 161457,
+   "soft_pixels": 20480,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed",
+    "note": "mask made without --sam2-checkpoint; bridge_occluders run separately on the same alpha"
+   }
+  },
+  "06-clock": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 1,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 511605,
+   "soft_pixels": 5928,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed"
+   }
+  },
+  "07-armor": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 1,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 163696,
+   "soft_pixels": 5875,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed"
+   }
+  },
+  "08-chair": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 1,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 199994,
+   "soft_pixels": 7036,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed"
+   }
+  },
+  "09-portal": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 1,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 160156,
+   "soft_pixels": 3676,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed"
+   }
+  },
+  "10-market": {
+   "mask_model": "BiRefNet",
+   "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+   "license": "MIT",
+   "binarized": false,
+   "components": 2,
+   "removed_components": 0,
+   "removed_pixels": 0,
+   "solid_pixels": 138579,
+   "soft_pixels": 3729,
+   "bridge": {
+    "large_parts": 1,
+    "occluder": "not_needed"
+   }
+  }
+ }
+}
