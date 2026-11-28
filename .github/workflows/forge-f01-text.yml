@@ -1,0 +1,52 @@
+name: F01 direct text to real 3D Shap-E
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/shap_e_text_probe.py','.github/workflows/forge-f01-text.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  text:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install public CPU text-to-3D dependencies
+        run: |
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install diffusers==0.35.2 transformers==4.46.3 accelerate==1.10.1 huggingface-hub==0.35.3 safetensors==0.6.2 numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 Pillow==10.4.0
+          pip check
+      - name: Two unrelated actual text-conditioned meshes
+        env:
+          HF_HUB_DISABLE_XET: '1'
+          OPENBLAS_NUM_THREADS: '2'
+        run: python verification/f01/shap_e_text_probe.py f01-text-evidence "a red ceramic teapot with a curved handle and spout" "a green turtle with four legs and a brown shell" --steps 24 --grid 96
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Independent GLB validation
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const dir='f01-text-evidence',out={};fs.mkdirSync(dir,{recursive:true});
+          for(const name of ['text-00.glb','text-01.glb']){
+            if(!fs.existsSync(dir+'/'+name)){out[name]={missing:true};continue;}
+            const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(dir+'/'+name)));
+            out[name]={errors:v.issues.numErrors,warnings:v.issues.numWarnings,messages:v.issues.messages};
+          }
+          fs.writeFileSync(dir+'/validation.json',JSON.stringify(out,null,2));console.log(out);
+          if(Object.values(out).some(v=>v.missing||v.errors||v.warnings))process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-text-evidence
+          path: f01-text-evidence/
