@@ -1,0 +1,81 @@
+{
+ "case": "portal",
+ "provider": "this cloud session CPU (4 vCPU, float32), backup to the Kaggle CPU batch",
+ "source": "Wikimedia Commons HARD10 public image, see hard10_manifest.json",
+ "mask": {
+  "mask_model": "BiRefNet",
+  "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+  "license": "MIT",
+  "binarized": false,
+  "components": 1,
+  "solid_pixels": 160156,
+  "soft_pixels": 3676,
+  "bridge": {
+   "large_parts": 1,
+   "occluder": "not_needed"
+  }
+ },
+ "engine": {
+  "engine": "TripoSG",
+  "model_revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+  "device": "cpu",
+  "dtype": "float32",
+  "steps": 50,
+  "guidance": 7.0,
+  "seed": 42,
+  "octree_depth": 9,
+  "faces": 1942626,
+  "vertices": 971131,
+  "denoise_seconds": 1339.4,
+  "inference_seconds": 3276.5,
+  "extraction": {
+   "dense_queries": 16777216,
+   "dense_seconds": 1184.9,
+   "band_queries_512": 11092744,
+   "band_seconds_512": 747.0
+  },
+  "glb_sha256": "82f5982732b13fc65398fdd742fa700c281188ab8b46344b0d83d1279c3c375e",
+  "bytes": 34965892
+ },
+ "raw_khronos": [
+  0,
+  0
+ ],
+ "mobile": {
+  "source_components": 247,
+  "triangles": 58740,
+  "vertices": 29200,
+  "bytes": 1406756,
+  "topology": {
+   "euler": -170,
+   "boundary_edges": 0,
+   "boundary_length": 0.0,
+   "nonmanifold": 0,
+   "components": 247,
+   "winding": true
+  },
+  "p99_surface_pct": 0.06320846501138014,
+  "max_sample_surface_pct": 0.2858320299006844,
+  "area_change_pct": 0.16415857674014767,
+  "self_intersection_pairs": 0,
+  "method": "proportional_parts_local_self_boolean",
+  "fallback_reason": "Small component could not be repaired without detail loss",
+  "decimation_overrides": {},
+  "geometry_gate_passed": true
+ },
+ "mobile_glb_sha256": "7ac36d091d070f04a0e64f0481e1d50b9884e61fb580daf3849e016ef6e7476f",
+ "mobile_khronos": [
+  0,
+  0
+ ],
+ "editor": {
+  "provider": "local test double",
+  "renderedTriangles": 58740,
+  "angles": 5,
+  "dialogSizes": 3,
+  "KhronosErrors": 0,
+  "KhronosWarnings": 0,
+  "jsErrors": 0
+ },
+ "visual_review": "Gothic portal with the arch opening, pinnacles and spires, tracery relief and small figures under the arch; side views give the building depth. The mask removed the street; some base steps remain. 247 closed parts; mobile LOD used the proportional multi-part path."
+}
