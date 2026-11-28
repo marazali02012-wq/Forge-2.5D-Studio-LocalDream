@@ -1,0 +1,87 @@
+name: F01 COLMAP and OpenMVS real photo reconstruction
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/colmap_photo_probe.py','.github/workflows/forge-f01-colmap.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: forge-f01-colmap
+  cancel-in-progress: true
+jobs:
+  photos:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned CPU camera and geometry libraries
+        run: pip install pycolmap==3.12.1 numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84
+      - name: Fetch real calibrated photos
+        run: |
+          curl -fL --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoSparseRing.zip -o /tmp/dino.zip
+          mkdir /tmp/dino && unzip -q /tmp/dino.zip -d /tmp/dino
+      - name: Recover camera poses without reference calibration and create mesh
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+        run: python verification/f01/colmap_photo_probe.py /tmp/dino f01-colmap-evidence
+      - name: External OpenMVS dense geometry (AGPL tool, isolated)
+        run: |
+          curl -fL --retry 2 --max-time 120 --max-filesize 170000000 https://github.com/cdcseacave/openMVS/releases/download/v2.4.0/OpenMVS_Ubuntu_x64.zip -o /tmp/openmvs.zip
+          echo '7104ae1ddd6ca38fbca9e0e4a70b20af59e21e0b497eb7181c864fbf38ca8d00  /tmp/openmvs.zip' | sha256sum -c -
+          mkdir /tmp/openmvs && unzip -q /tmp/openmvs.zip -d /tmp/openmvs
+          python - <<'PY'
+          import pycolmap
+          pycolmap.undistort_images('f01-colmap-evidence/undistorted','f01-colmap-evidence/colmap/sparse','f01-colmap-evidence/images')
+          PY
+          interface="$(find /tmp/openmvs -type f -name InterfaceCOLMAP -print -quit)"
+          densify="$(find /tmp/openmvs -type f -name DensifyPointCloud -print -quit)"
+          mesh="$(find /tmp/openmvs -type f -name ReconstructMesh -print -quit)"
+          test -n "$interface" && test -n "$densify" && test -n "$mesh"
+          chmod +x "$interface" "$densify" "$mesh"
+          export LD_LIBRARY_PATH="$(find /tmp/openmvs -type f -name '*.so*' -printf '%h\n' | sort -u | paste -sd: -):${LD_LIBRARY_PATH:-}"
+          cd f01-colmap-evidence
+          "$interface" -i undistorted -o scene.mvs --image-folder undistorted/images
+          "$densify" scene.mvs --resolution-level 0 --max-threads 4
+          "$mesh" scene_dense.mvs -p scene_dense.ply --max-threads 4
+          python - <<'PY'
+          import trimesh,numpy as np,json
+          from pathlib import Path
+          src=Path('scene_dense_mesh.ply')
+          m=trimesh.load(src,force='mesh',process=False)
+          assert len(m.faces)>100 and np.isfinite(m.vertices).all() and np.all(m.extents>0)
+          m.export('openmvs.glb',include_normals=True)
+          Path('openmvs.json').write_text(json.dumps(dict(faces=len(m.faces),vertices=len(m.vertices),watertight=bool(m.is_watertight)),indent=2))
+          PY
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Independently validate actual GLBs
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const d='f01-colmap-evidence',out={};fs.mkdirSync(d,{recursive:true});
+          for(const name of ['model.glb','openmvs.glb']){
+            if(!fs.existsSync(d+'/'+name)){out[name]={missing:true};continue;}
+            const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(d+'/'+name)));out[name]=v.issues;
+          }
+          fs.writeFileSync(d+'/validation.json',JSON.stringify(out,null,2));console.log(out);
+          if(Object.values(out).some(v=>v.missing||v.numErrors||v.numWarnings))process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-colmap-evidence
+          path: |
+            f01-colmap-evidence/*.json
+            f01-colmap-evidence/*.glb
+            f01-colmap-evidence/*.png
+            f01-colmap-evidence/mask_previews/
+            f01-colmap-evidence/colmap/sparse/*.txt
