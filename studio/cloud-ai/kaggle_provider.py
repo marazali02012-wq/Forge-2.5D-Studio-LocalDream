@@ -86,7 +86,7 @@ class Kaggle:
         if self.status(self.existing) not in TERMINAL:
             return False
         quota = self.rpc(KERNELS, "GetAcceleratorQuotaStatistics", {}).get("gpuQuota")
-        if not isinstance(quota, dict) or quota.get("isPayToScaleEnabled", False) is not False:
+        if not isinstance(quota, dict) or quota.get("isPayToScaleEnabled") is not False:
             return False
 
         def seconds(value):

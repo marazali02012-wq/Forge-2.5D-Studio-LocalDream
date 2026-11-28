@@ -150,6 +150,31 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(self.request(raw=image())[1]["id"], job)
         self.assertEqual(self.provider.submissions, 1)
 
+    def test_admission_requires_confirmed_free_scaling_and_terminal_job(self):
+        provider = Kaggle("fixture", "KGAT_fixture", "existing")
+        baseline = {"totalTimeAllowed": "108000s", "timeUsed": "4200s", "timeReserved": "0s"}
+        def simulate(state, quota):
+            def rpc(service, method, payload):
+                if method == "GetKernelSessionStatus":
+                    return {"status": state}
+                if method == "GetAcceleratorQuotaStatistics":
+                    return {"gpuQuota": quota}
+                self.fail("Unexpected write or RPC")
+            provider.rpc = rpc
+        for value in (True, None, 0, "false"):
+            with self.subTest(paid=value):
+                simulate("COMPLETE", {**baseline, "isPayToScaleEnabled": value})
+                self.assertFalse(provider.admission())
+        simulate("COMPLETE", baseline)
+        self.assertFalse(provider.admission())
+        for state in ("QUEUED", "RUNNING", "CANCEL_REQUESTED", None):
+            simulate(state, {**baseline, "isPayToScaleEnabled": False})
+            self.assertFalse(provider.admission())
+        simulate("COMPLETE", {**baseline, "isPayToScaleEnabled": False})
+        self.assertTrue(provider.admission())
+        simulate("COMPLETE", {**baseline, "timeUsed": "107000s", "isPayToScaleEnabled": False})
+        self.assertFalse(provider.admission())
+
     def test_kaggle_rpc_status_and_binary_integrity(self):
         provider = Kaggle("fixture", "KGAT_fixture", "existing")
         provider.rpc = lambda *_: {}

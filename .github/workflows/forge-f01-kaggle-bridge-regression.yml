@@ -1,0 +1,18 @@
+name: F01 Kaggle admission and bridge regression
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['studio/cloud-ai/kaggle_provider.py','studio/cloud-ai/private_api_kaggle.py','verification/f01/kaggle_bridge_qa.py','.github/workflows/forge-f01-kaggle-bridge-regression.yml']
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install Pillow==10.4.0
+      - run: python verification/f01/kaggle_bridge_qa.py -v
