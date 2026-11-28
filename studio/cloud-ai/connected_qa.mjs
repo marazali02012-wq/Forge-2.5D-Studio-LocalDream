@@ -49,6 +49,37 @@ try{
   await page.locator('#quickCamera [data-action='+view+']').click();
   await page.screenshot({path:dir+'/f01-chair-hd-'+view+'.png'});
  }
- const report={quality,actualUpload:true,actualInference:true,httpStatus:response.status(),authRejected:bad.status,invalidRejected:invalid.status,bytes:data.length,...result,glbErrors:validation.issues.numErrors,glbWarnings:validation.issues.numWarnings,errors,requests:requests.filter(s=>/^https?:/.test(s)).map(s=>new URL(s).origin)};
+ // F01: two independent genuine inference requests; invalid image must not
+ // erase prior successes or abort later files.
+ const batch={requests:0,downloads:[],viewports:[]};
+ await page.locator('#quickAi').click();await page.locator('#forgeStaticQuality').selectOption('128');await page.locator('#forgeBatchOpen').click();
+ for(const [width,height] of [[800,360],[740,360],[667,375]]){
+  await page.setViewportSize({width,height});const box=await page.locator('#forgeBatchDialog').boundingBox();
+  assert.ok(box&&box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=height+1);
+  await page.screenshot({path:dir+'/f01-batch-menu-'+width+'.png'});batch.viewports.push({width,height,box});
+ }
+ const before=await page.evaluate(()=>JSON.stringify(parts[0].geometry.i));
+ await page.locator('#forgeBatchFiles').setInputFiles([
+  {name:'chair.png',mimeType:'image/png',buffer:chair},
+  {name:'invalid.png',mimeType:'image/png',buffer:Buffer.from('not png')},
+  {name:'teapot.png',mimeType:'image/png',buffer:fs.readFileSync('/tmp/triposr/examples/teapot.png')}
+ ]);
+ const responses=[];const listener=r=>{if(r.url()===api+'/v1/generate'&&r.request().method()==='POST')responses.push(r.status())};page.on('response',listener);
+ await page.locator('#forgeBatchStart').click();
+ await page.waitForFunction(()=>document.getElementById('forgeBatchStatus').textContent==='Hazır: 2 · Hata: 1 · Atlanan: 0',null,{timeout:650000});
+ page.off('response',listener);assert.deepEqual(responses,[200,400,200]);batch.requests=responses;
+ assert.equal(await page.evaluate(()=>JSON.stringify(parts[0].geometry.i)),before);
+ const links=page.locator('#forgeBatchResults a');assert.equal(await links.count(),2);
+ for(let i=0;i<2;i++){
+  const wait=page.waitForEvent('download');await links.nth(i).click();const download=await wait;
+  const name=download.suggestedFilename();assert.equal(name,['1-chair.glb','3-teapot.glb'][i]);
+  const path=dir+'/f01-batch-'+name;await download.saveAs(path);const bytes=fs.readFileSync(path);
+  const v=await validator.validateBytes(bytes);assert.equal(v.issues.numErrors,0);assert.equal(v.issues.numWarnings,0);
+  batch.downloads.push({name,bytes:bytes.length,errors:v.issues.numErrors,warnings:v.issues.numWarnings});
+ }
+ assert.notDeepEqual(fs.readFileSync(dir+'/f01-batch-1-chair.glb'),fs.readFileSync(dir+'/f01-batch-3-teapot.glb'));
+ await page.screenshot({path:dir+'/f01-batch-results.png'});await page.locator('#forgeBatchClose').click();
+ assert.deepEqual(errors,[]);
+ const report={batch,quality,actualUpload:true,actualInference:true,httpStatus:response.status(),authRejected:bad.status,invalidRejected:invalid.status,bytes:data.length,...result,glbErrors:validation.issues.numErrors,glbWarnings:validation.issues.numWarnings,errors,requests:requests.filter(s=>/^https?:/.test(s)).map(s=>new URL(s).origin)};
  fs.writeFileSync(dir+'/report.json',JSON.stringify(report,null,2));console.log(report);
 }finally{await browser.close();http.close()}
