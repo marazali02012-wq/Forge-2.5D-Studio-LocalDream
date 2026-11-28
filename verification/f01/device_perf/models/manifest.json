@@ -26,5 +26,19 @@
   "encoding": "base64",
   "triangles": 59000,
   "sha256": "56ad732537a76cf130dd51a193d89fc41b3fb1e35bb0ef71c1e6a8b24da204e5"
+ },
+ {
+  "name": "Ejderha · HARD10 mobil",
+  "file": "models/dragon-mobile.glb.b64.txt",
+  "encoding": "base64",
+  "triangles": 59000,
+  "sha256": "9663245379974d3f854621de3aa8c895bbfd208cedceca8f866bef2e1c4f81d0"
+ },
+ {
+  "name": "Saat · HARD10 mobil",
+  "file": "models/clock-mobile.glb.b64.txt",
+  "encoding": "base64",
+  "triangles": 59000,
+  "sha256": "3fd6846738a95cdd94056518fbf36cd55762666c0fa1c82978b151ae19b3b01f"
  }
 ]
