@@ -1,0 +1,80 @@
+{
+ "case": "dragon",
+ "provider": "private Kaggle CPU session (batch, no GPU quota)",
+ "source": "Wikimedia Commons HARD10 public image, see hard10_manifest.json",
+ "mask": {
+  "mask_model": "BiRefNet",
+  "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+  "license": "MIT",
+  "binarized": false,
+  "components": 5,
+  "solid_pixels": 94141,
+  "soft_pixels": 18334,
+  "bridge": {
+   "large_parts": 1,
+   "occluder": "not_needed"
+  }
+ },
+ "engine": {
+  "engine": "TripoSG",
+  "model_revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+  "device": "cpu",
+  "dtype": "float32",
+  "steps": 50,
+  "guidance": 7.0,
+  "seed": 42,
+  "octree_depth": 9,
+  "faces": 739718,
+  "vertices": 369875,
+  "denoise_seconds": 6658.9,
+  "inference_seconds": 14106.1,
+  "extraction": {
+   "dense_queries": 16777216,
+   "dense_seconds": 5543.4,
+   "band_queries_512": 5755688,
+   "band_seconds_512": 1893.7
+  },
+  "glb_sha256": "99135630d2f7ab63462bc2d004c1b9458bb690c0e2e650b504eb7a4e43ec9a93",
+  "bytes": 13315920
+ },
+ "raw_khronos": [
+  0,
+  0
+ ],
+ "mobile": {
+  "source_components": 10,
+  "triangles": 59000,
+  "vertices": 29516,
+  "bytes": 1417460,
+  "topology": {
+   "euler": 16,
+   "boundary_edges": 0,
+   "boundary_length": 0.0,
+   "nonmanifold": 0,
+   "components": 10,
+   "winding": true
+  },
+  "p99_surface_pct": 0.02029784520565217,
+  "max_sample_surface_pct": 0.036024942922425154,
+  "area_change_pct": 0.09376275077523921,
+  "self_intersection_pairs": 0,
+  "method": "topology_first_local_self_boolean",
+  "decimation_overrides": {},
+  "geometry_gate_passed": true
+ },
+ "mobile_glb_sha256": "9663245379974d3f854621de3aa8c895bbfd208cedceca8f866bef2e1c4f81d0",
+ "mobile_khronos": [
+  0,
+  0
+ ],
+ "editor": {
+  "provider": "local test double",
+  "renderedTriangles": 59000,
+  "angles": 5,
+  "dialogSizes": 3,
+  "KhronosErrors": 0,
+  "KhronosWarnings": 0,
+  "jsErrors": 0
+ },
+ "visual_review": "A historic flat woodcut becomes a full 3D creature: curled tail, two ribbed wings, scale relief in the geometry, open toothed jaw, clawed feet; front and back views are symmetric and consistent. 10 closed parts."
+}
