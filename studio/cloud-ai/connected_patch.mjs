@@ -74,7 +74,7 @@ edit('<body>','<body>'+dialog.replace(qualityAnchor,'<label for="forgeStaticQual
 edit('<body>','<body><dialog id="forgeBatchDialog" style="box-sizing:border-box;width:min(480px,94vw);max-height:90vh;overflow:auto;background:#202a36;color:white;padding:12px"><b>Toplu 3D üretim</b><p>En fazla 5 görsel; her biri ayrı GLB.</p><input id="forgeBatchFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple style="max-width:100%"><p id="forgeBatchStatus" role="status" aria-live="polite"></p><div id="forgeBatchResults"></div><button id="forgeBatchStart">Üret</button> <button id="forgeBatchStop" disabled>Sonrakileri durdur</button> <button id="forgeBatchClose">Kapat</button></dialog>');
 edit('<button id="closeAiTools">','<button id="forgeBatchOpen">Toplu 3D üret</button><button id="closeAiTools">');
 edit('<body>','<body>'+read('kaggle_dialog.html'));
-edit('<button id="closeAiTools">','<button id="forgeKaggleOpen">Kaggle ile 3D üret</button><button id="closeAiTools">');
+edit('<button id="closeAiTools">','<button id="forgeKaggleOpen">Sunucuda 3D üret</button><button id="closeAiTools">');
 edit('</script></body></html>',read('rig_viewer.js')+'\n'+read('batch_static.js')+'\n'+read('kaggle_jobs.js')+'\n</script></body></html>');
 h=h.replaceAll(/(Forge Studio |FORGE |Forge )R70\.(17|29)/g,'$1R70.34');
 for(const file of ['Forge_R70_34_Studio.html','Forge_R70_29_AI_Connected.html']) fs.writeFileSync(file,h);

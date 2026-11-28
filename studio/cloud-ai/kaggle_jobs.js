@@ -45,7 +45,7 @@ kaggleStart.onclick = async () => {
     kaggleStatus.textContent = 'Forge erişim anahtarını gir.';
     return;
   }
-  if (!confirm('Görseli Forge üzerinden özel Kaggle veri kümesine yükleyip 3D üretim başlat?')) return;
+  if (!confirm('Görseli Forge sunucusuna gönderip 3D üretim başlat?')) return;
   tokenInput.value = '';
   pendingKaggleModel = null;
   kaggleOpenModel.hidden = true;
@@ -85,9 +85,11 @@ kaggleStart.onclick = async () => {
     });
     if (!/^[0-9a-f]{64}$/.test(job.id)) throw Error('İş kimliği geçersiz.');
     const jobPath = jobsPath + '/' + job.id;
-    const deadline = Date.now() + 3 * 3600_000;
+    const started = Date.now();
+    const deadline = started + 3 * 3600_000;
     while (true) {
-      kaggleStatus.textContent = job.message;
+      const minutes = Math.floor((Date.now() - started) / 60000);
+      kaggleStatus.textContent = job.message + (minutes ? ' · ' + minutes + ' dk' : '');
       if (job.status === 'ready') {
         // TripoSG follows the standard GLB import orientation.
         pendingKaggleModel = parseForgeAiGLB(await request(jobPath + '/model'));
@@ -102,7 +104,20 @@ kaggleStart.onclick = async () => {
         break;
       }
       await new Promise(resolve => setTimeout(resolve, 15000));
-      job = await request(jobPath);
+      // Mobile networks and server restarts drop single polls. The job is
+      // server-side and idempotent, so retry transient failures a few times.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          job = await request(jobPath);
+          break;
+        } catch (error) {
+          const transient = error.name === 'AbortError' || error instanceof TypeError
+            || /^Forge HTTP 5\d\d$/.test(error.message);
+          if (!transient || attempt >= 6) throw error;
+          kaggleStatus.textContent = 'Bağlantı koptu, yeniden deneniyor (' + attempt + '/5)…';
+          await new Promise(resolve => setTimeout(resolve, 15000));
+        }
+      }
     }
   } catch (error) {
     kaggleStatus.textContent = error.name === 'AbortError'
