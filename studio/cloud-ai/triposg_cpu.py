@@ -92,6 +92,7 @@ def _hierarchical_extract_cpu(geometric_func, device, bounds=(-1.005, -1.005, -1
     logits = geometric_func(xyz.unsqueeze(0)).float().view(*grid_size)
     EXTRACT_STATS["dense_queries"] = int(xyz.shape[0])
     EXTRACT_STATS["dense_seconds"] = round(time.time() - started, 1)
+    print(json.dumps(EXTRACT_STATS), flush=True)
     for i in range(hierarchical_octree_depth - dense_octree_depth):
         size = 2 ** (dense_octree_depth + i + 1)
         half = size / 2
@@ -225,10 +226,18 @@ def main():
                      bounds=(-1.005, -1.005, -1.005, 1.005, 1.005, 1.005),
                      dense_octree_depth=args.dense_depth, hierarchical_octree_depth=args.depth)[0]
     else:
+        def progress(pipeline, step, timestep, kwargs):
+            # Newline-terminated so log collectors (Kaggle) show it live; tqdm uses \r.
+            if (step + 1) % 5 == 0 or step + 1 == args.steps:
+                print(json.dumps({"flow_step": step + 1, "of": args.steps,
+                                  "seconds": round(time.time() - loaded, 1)}), flush=True)
+            return kwargs
+
         out = pipe(image=image, generator=torch.Generator("cpu").manual_seed(args.seed),
                    num_inference_steps=args.steps, guidance_scale=args.guidance,
                    use_flash_decoder=False, dense_octree_depth=args.dense_depth,
-                   hierarchical_octree_depth=args.depth).samples[0]
+                   hierarchical_octree_depth=args.depth,
+                   callback_on_step_end=progress).samples[0]
     if out[0] is None:
         raise SystemExit("Geometry extraction failed")
     mesh = trimesh.Trimesh(out[0], out[1], process=False)
