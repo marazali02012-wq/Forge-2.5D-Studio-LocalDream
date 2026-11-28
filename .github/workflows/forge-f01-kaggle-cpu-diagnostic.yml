@@ -1,0 +1,80 @@
+name: F01 independent private CPU queue diagnostic
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['.github/workflows/forge-f01-kaggle-cpu-diagnostic.yml']
+permissions:
+  contents: read
+concurrency:
+  group: forge-f01-cpu-diagnostic
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/forge-r70-surface-lab' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    environment: forge-kaggle
+    timeout-minutes: 5
+    steps:
+      - name: Submit one independent private CPU-only geometry diagnostic
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, time, urllib.request, urllib.error
+          token=os.environ.get('KAGGLE_API_TOKEN','').strip()
+          if not re.fullmatch(r'KGAT_[!-~]+',token):
+              raise SystemExit('Missing or malformed token')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs):return None
+          opener=urllib.request.build_opener(NoRedirect())
+          def rpc(service,method,body):
+              req=urllib.request.Request('https://api.kaggle.com/v1/'+service+'/'+method,data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'},method='POST')
+              try:
+                  with opener.open(req,timeout=25) as response:
+                      data=json.loads(response.read(4*1024*1024))
+                      print(method+': HTTP '+str(response.status),flush=True)
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit(method+': HTTP '+str(exc.code)) from None
+              except Exception as exc:
+                  raise SystemExit(method+': '+type(exc).__name__) from None
+              if not isinstance(data,dict) or data.get('error') or data.get('errorMessage') or (type(data.get('code')) is int and data['code']>=400):
+                  raise SystemExit(method+': unexpected response')
+              return data
+          k='kernels.KernelsApiService'
+          data=rpc('datasets.DatasetApiService','ListDatasets',{'group':'DATASET_SELECTION_GROUP_MY_PRIVATE','pageSize':100})
+          refs={r.get('ref','') for r in data.get('datasets',[]) if r.get('isPrivate') is True and re.fullmatch(r'[a-zA-Z0-9_-]+/forge-warrior-test',r.get('ref',''))}
+          if len(refs)!=1:raise SystemExit('Owner verification failed')
+          owner=refs.pop().split('/')[0]
+          run=os.environ['GITHUB_RUN_ID']
+          assert run.isdigit()
+          slug='forge-f01-cpu-diagnostic-'+run
+          target={'userName':owner,'kernelSlug':slug}
+          source='''import json, pathlib, math
+          # Synthetic tetrahedron volume and CPU arithmetic; no AI inference.
+          v=[(0,0,0),(1,0,0),(0,1,0),(0,0,1)]
+          volume=abs(v[1][0]*v[2][1]*v[3][2])/6
+          checksum=sum(i*i for i in range(1024))
+          assert math.isclose(volume,1/6) and checksum==357389824
+          pathlib.Path("/kaggle/working/forge_cpu_diagnostic.json").write_text(json.dumps({"run_id":RUN_ID,"volume":volume,"checksum":checksum,"cpu_only":True}))
+          print("FORGE_CPU_DIAGNOSTIC_COMPLETE")
+          '''.replace('RUN_ID',repr(run))
+          compile(source,'cpu_diagnostic.py','exec')
+          # No accelerator, external dataset, internet, or private image.
+          rpc(k,'SaveKernel',{'slug':owner+'/'+slug,'newTitle':slug,'text':source,'language':'python','kernelType':'script','isPrivate':True,'enableGpu':False,'enableTpu':False,'enableInternet':False,'sessionTimeoutSeconds':600,'kernelExecutionType':'SAVE_AND_RUN_ALL','datasetDataSources':[],'kernelDataSources':[],'competitionDataSources':[],'modelDataSources':[]})
+          print('CPU_SAVE_ACCEPTED; do not resubmit',flush=True)
+          metadata=rpc(k,'GetKernel',target).get('metadata',{})
+          if metadata.get('isPrivate') is not True or metadata.get('currentVersionNumber')!=1 or metadata.get('enableGpu',False) is not False or metadata.get('enableTpu',False) is not False or metadata.get('enableInternet',False) is not False:
+              raise SystemExit('Private CPU metadata not confirmed; do not resubmit')
+          print('PRIVATE_CPU_V1_CONFIRMED',flush=True)
+          states=('QUEUED','RUNNING','COMPLETE','ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED','NEW_SCRIPT')
+          for i in range(4):
+              s=rpc(k,'GetKernelSessionStatus',target).get('status')
+              if type(s) is int and 0<=s<len(states):s=states[s]
+              print('CPU_STATUS: '+(s if s in states else 'UNREPORTED'),flush=True)
+              output=rpc(k,'ListKernelSessionOutput',dict(target,pageSize=100))
+              files=output.get('files',[])
+              found=any(isinstance(x,dict) and x.get('fileName')=='forge_cpu_diagnostic.json' for x in files)
+              print('CPU_OUTPUT_LISTED: '+str(found),flush=True)
+              if s in ('COMPLETE','ERROR','CANCEL_ACKNOWLEDGED') or found:break
+              if i<3:time.sleep(10)
+          PY
