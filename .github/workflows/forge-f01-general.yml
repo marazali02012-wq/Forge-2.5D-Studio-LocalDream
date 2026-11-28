@@ -1,0 +1,55 @@
+name: F01 general purpose true 3D regression
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/**','.github/workflows/forge-f01-general.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned genuine TripoSR CPU model dependencies
+        run: |
+          git init /tmp/triposr
+          git -C /tmp/triposr fetch --depth 1 https://github.com/VAST-AI-Research/TripoSR.git 107cefdc244c39106fa830359024f6a2f1c78871
+          git -C /tmp/triposr checkout FETCH_HEAD
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 omegaconf==2.3.0 Pillow==10.4.0 einops==0.7.0 transformers==4.46.3 tokenizers==0.20.3 trimesh==4.0.5 networkx==3.4.2 huggingface-hub==0.26.5 'rembg[cpu]==2.0.61' opencv-python-headless==4.10.0.84 onnxruntime==1.20.1 numba==0.60.0 imageio==2.36.0 imageio-ffmpeg==0.5.1
+          printf 'def marching_cubes(*args, **kwargs):\n    raise RuntimeError("CPU backend not installed")\n' > /tmp/triposr/torchmcubes.py
+      - run: pip check
+      - name: Actual inference, reimport and four angle render
+        run: PYTHONPATH=/tmp/triposr OPENBLAS_NUM_THREADS=2 FORGE_CPU_THREADS=4 python verification/f01/general_static_qa.py
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Independent GLB validation
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const names=['chair','horse','teapot','house','seated_scene','robot_regression','chair_hd'],out={};
+          for(const n of names){
+            const path='f01-evidence/'+n+'/generated.glb';
+            if(!fs.existsSync(path)){out[n]={missing:true};continue;}
+            const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(path)));
+            out[n]={errors:v.issues.numErrors,warnings:v.issues.numWarnings,messages:v.issues.messages};
+          }
+          fs.mkdirSync('f01-evidence',{recursive:true});fs.writeFileSync('f01-evidence/validation.json',JSON.stringify(out,null,2));
+          console.log(JSON.stringify(out,null,2));
+          if(Object.values(out).some(v=>v.missing||v.errors||v.warnings))process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-general-evidence
+          path: f01-evidence/
