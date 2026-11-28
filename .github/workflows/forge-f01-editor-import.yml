@@ -1,0 +1,40 @@
+name: F01 real photo and text models in Forge editor
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/real_editor_import_qa.mjs','.github/workflows/forge-f01-editor-import.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-f01-mobile-color-evidence
+          run-id: 46094187607
+          github-token: ${{ github.token }}
+          path: /tmp/mobile-color
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-f01-text-evidence
+          run-id: 46091269501
+          github-token: ${{ github.token }}
+          path: /tmp/text-source
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts playwright@1.56.1 gltf-validator@2.0.0-dev.3.10
+      - run: npx playwright install chromium
+      - run: node studio/cloud-ai/ai_import_patch.mjs && node studio/cloud-ai/connected_patch.mjs
+      - name: Real offline imports and export regression
+        run: node verification/f01/real_editor_import_qa.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-editor-evidence
+          path: f01-editor-evidence/
