@@ -1,0 +1,16 @@
+<dialog id="forgeKaggleDialog" style="box-sizing:border-box;width:min(460px,94vw);max-height:92vh;overflow:auto;background:#202a36;color:white;padding:12px">
+  <h2 style="margin:0 0 8px;font-size:1.15rem">Kaggle ile 3D üret</h2>
+  <p style="margin:0 0 8px">Araştırma modu. Görsel özel Kaggle veri kümesine yüklenir.</p>
+  <form style="display:grid;gap:6px;grid-template-columns:max-content minmax(0,1fr);align-items:center" onsubmit="return false">
+    <label style="display:block;margin:0" for="forgeKaggleImage">Görsel</label>
+    <input id="forgeKaggleImage" type="file" accept="image/png,image/jpeg,image/webp" style="box-sizing:border-box;width:100%;min-width:0">
+    <label style="display:block;margin:0" for="forgeKaggleServer">Forge sunucu adresi</label>
+    <input id="forgeKaggleServer" type="url" autocomplete="off" placeholder="https://">
+    <label style="display:block;margin:0" for="forgeKaggleAccess">Forge erişim anahtarı</label>
+    <input id="forgeKaggleAccess" type="password" autocomplete="off">
+  </form>
+  <p id="forgeKaggleStatus" role="status" aria-live="polite" style="min-height:2.4em;margin:8px 0"></p>
+  <button id="forgeKaggleStart" type="button">Üret</button>
+  <button id="forgeKaggleOpenModel" type="button" hidden>Editörde aç</button>
+  <button id="forgeKaggleClose" type="button">Kapat</button>
+</dialog>
