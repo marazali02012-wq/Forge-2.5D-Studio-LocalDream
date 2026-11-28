@@ -6,11 +6,11 @@ assert.equal(files.length,48);
 const buffers=files.map(p=>fs.readFileSync(p));
 function pack(images,up='right'){const meta=Buffer.from(JSON.stringify({sizes:images.map(x=>x.length),image_up:up}));const h=Buffer.alloc(4);h.writeUInt32BE(meta.length);return Buffer.concat([h,meta,...images])}
 const post=(body,auth=true,extra={})=>fetch(api+'/v1/generate-multiview',{method:'POST',headers:{'Content-Type':'application/octet-stream',...(auth?{Authorization:'Bearer '+token}:{}),...extra},body});
-assert.equal((await post(pack(buffers.slice(0,12)),false)).status,401);
+assert.equal((await post(Buffer.from('unauthorized'),false)).status,401);
 assert.equal((await post(pack(buffers.slice(0,11)))).status,400);
 assert.equal((await post(pack(Array(12).fill(buffers[0])))).status,400);
 assert.equal((await post(pack(buffers.slice(0,12),'invalid'))).status,400);
-assert.equal((await post(pack(buffers.slice(0,12)),true,{Origin:'https://example.invalid'})).status,403);
+assert.equal((await post(Buffer.from('forbidden'),true,{Origin:'https://example.invalid'})).status,403);
 assert.equal((await(await fetch(api+'/health')).json()).multiview_experimental_enabled,true);
 const http=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(fs.readFileSync('Forge_R70_34_F01_Multiview_Experimental.html'))});await new Promise(r=>http.listen(8766,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
@@ -33,7 +33,7 @@ try{
  const rp=page.waitForResponse(r=>r.url()===api+'/v1/generate-multiview'&&r.request().method()==='POST',{timeout:1140000});
  await page.locator('#forgePhotosStart').click();await page.waitForFunction(()=>document.getElementById('forgePhotosStart').disabled);
  assert.equal(await page.evaluate(()=>JSON.stringify(parts)),before);
- const response=await rp;assert.equal(response.status(),200,await response.text().catch(()=>''));const raw=await response.body();
+ const response=await rp;if(response.status()!==200)throw Error('HTTP '+response.status()+': '+await response.text());const raw=await response.body();
  fs.writeFileSync(dir+'/generated.glb',raw);const v=await validator.validateBytes(raw);assert.equal(v.issues.numErrors,0);assert.equal(v.issues.numWarnings,0);
  await page.waitForFunction(()=>parts[0]?.type==='aiMesh',null,{timeout:30000});
  const result=await page.evaluate(b64=>{const raw=parseForgeAiGLB(Uint8Array.from(atob(b64),c=>c.charCodeAt(0)).buffer),p=parts[0];return {triangles:p.geometry.i.length/3,rendered:three.renderer.info.render.triangles,geometryUnrotated:raw.geometry.v.every((x,i)=>x===p.geometry.v[i]),overflow:document.documentElement.scrollWidth>innerWidth}},raw.toString('base64'));
