@@ -52,7 +52,31 @@ def expand_edge_region_cpu(edge_coords, grid_size):
     return (low[:, None, :] * 2 + offsets[None]).reshape(-1, 3)
 
 
-def hierarchical_extract_cpu(geometric_func, device, bounds=(-1.005, -1.005, -1.005, 1.005, 1.005, 1.005),
+def band_candidates(logits):
+    """Upstream band selection, evaluated with upstream's float16 semantics.
+
+    Upstream stores the coarse grid as float16 and keeps voxels where
+    |2*sigmoid(x)-1| < 1, i.e. where the float16 result is not saturated
+    (about |x| < 8). On a float32 grid the same expression is true almost
+    everywhere, which refined the whole 512^3 grid (134,217,728 queries for
+    the HARD10 peacock) instead of the surface band. Values stay float32.
+    """
+    import torch
+    from triposg import inference_utils as iu
+
+    return iu.find_candidates_band(logits.to(torch.float16), 1.0)
+
+
+def hierarchical_extract_cpu(*args, **kwargs):
+    # Upstream decorates its extractor with @torch.no_grad(); without it a
+    # direct call records autograd state for every query chunk (OOM).
+    import torch
+
+    with torch.inference_mode():
+        return _hierarchical_extract_cpu(*args, **kwargs)
+
+
+def _hierarchical_extract_cpu(geometric_func, device, bounds=(-1.005, -1.005, -1.005, 1.005, 1.005, 1.005),
                              dense_octree_depth=8, hierarchical_octree_depth=9, chunk=None):
     import torch
     from skimage import measure
@@ -72,7 +96,7 @@ def hierarchical_extract_cpu(geometric_func, device, bounds=(-1.005, -1.005, -1.
         size = 2 ** (dense_octree_depth + i + 1)
         half = size / 2
         high = torch.nn.functional.interpolate(logits[None, None], scale_factor=2)[0, 0]
-        edges = iu.find_candidates_band(logits, 1.0)
+        edges = band_candidates(logits)
         coords = expand_edge_region_cpu(edges, int(size / 2)).float()
         norm = (coords - half) * (abs(bounds[0]) / half)
         started = time.time()
@@ -134,7 +158,7 @@ def main():
     ap.add_argument("--bf16-transformer", action="store_true",
                     help="Run only the flow transformer under CPU bfloat16 autocast (AMX); VAE and extraction stay float32")
     ap.add_argument("--bf16-decoder", action="store_true",
-                    help="Research: VAE geometry queries under CPU bfloat16 autocast")
+                    help="Research: VAE geometry-query matmuls under CPU bfloat16 autocast")
     ap.add_argument("--latents", help="Decode these saved latents instead of running diffusion (A/B of extraction)")
     args = ap.parse_args()
 
@@ -174,6 +198,8 @@ def main():
             saved["z"] = z.detach().float().clone()
             torch.save(saved["z"], Path(args.out).with_suffix(".latents.pt"))
         if args.bf16_decoder:
+            # Research flag. Query coordinates and Fourier features stay float32
+            # (autocast only lowers matmuls); results must pass the A/B check.
             with torch.autocast("cpu", dtype=torch.bfloat16):
                 out = vae_decode(z, *a, **k)
             out.sample = out.sample.float()
