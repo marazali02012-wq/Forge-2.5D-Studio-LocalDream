@@ -122,9 +122,25 @@ def main():
     ordered_views=sorted(views,key=lambda q:q["name"]);scores=[]
     for i in np.linspace(0,len(ordered_views)-1,6,dtype=int):
         q=ordered_views[i];pred=silhouette(m,q);truth=q["mask"]
-        scores.append(float((pred&truth).sum()/max(1,(pred|truth).sum())))
+        pred=np.asarray(pred,dtype=bool);truth=np.asarray(truth,dtype=bool)
+        intersection=int((pred&truth).sum());union=int((pred|truth).sum())
+        scores.append(float(intersection/max(1,union)))
+        # Preserve the failed result as a diagnostic, never as accepted model.glb.
+        overlay=np.zeros((*truth.shape,3),np.uint8)
+        overlay[truth&pred]=(70,210,115)
+        overlay[truth&~pred]=(245,72,75)
+        overlay[pred&~truth]=(70,145,245)
+        diag=out/"silhouette_diagnostics";diag.mkdir(exist_ok=True)
+        Image.fromarray(overlay).save(diag/(q["name"]+".png"))
+        report.setdefault("silhouette_per_view",[]).append(dict(name=q["name"],iou=scores[-1],
+            truth_pixels=int(truth.sum()),predicted_pixels=int(pred.sum()),
+            missing_pixels=int((truth&~pred).sum()),extra_pixels=int((pred&~truth).sum())))
     report["input_view_iou"]=scores;report["mean_input_iou"]=float(np.mean(scores))
-    if report["mean_input_iou"]<.85:raise ValueError("silhouette mismatch")
+    report["silhouette_accepted"]=report["mean_input_iou"]>=.85
+    (out/"report.json").write_text(json.dumps(report,indent=2));print(json.dumps({"silhouette_per_view":report["silhouette_per_view"],"mean_input_iou":report["mean_input_iou"]}),flush=True)
+    if not report["silhouette_accepted"]:
+        m.export(out/"rejected-silhouette.glb",include_normals=True)
+        raise ValueError("silhouette mismatch; see diagnostics, rejected model is not deliverable")
     ordered=sorted((im for im in r.images.values() if im.has_pose),key=lambda im:im.name)
     rt=[im.cam_from_world().matrix() for im in ordered];T,metrics=alignment([q[:,:3] for q in rt],[-q[:,:3].T@q[:,3] for q in rt],a.image_up)
     m.apply_transform(T);dst=out/"model.glb";m.export(dst,include_normals=True)
