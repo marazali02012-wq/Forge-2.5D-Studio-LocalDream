@@ -20,7 +20,7 @@ jobs:
           python3 - <<'PY'
           import json, os, re, urllib.request, urllib.error
           token=os.environ.get('KAGGLE_API_TOKEN','').strip()
-          if not re.fullmatch(r'KGAT_[A-Za-z0-9_.~+/=-]+',token):
+          if not token.startswith('KGAT_') or len(token)<=5 or any(not 33<=ord(ch)<=126 for ch in token):
               raise SystemExit('AUTH NOT TESTED: missing or invalid token format')
           # Official SDK protocol: POST /v1/{service}/{method}, JSON fields and bearer token.
           # Do not forward credentials on redirects or print response bodies.
