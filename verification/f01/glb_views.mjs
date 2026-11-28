@@ -1,6 +1,7 @@
 // F01 visual audit: real WebGL renders of actual GLB geometry from five
 // directions next to the source image. No mesh editing, only viewing.
 // Usage: node glb_views.mjs THREE_DIR OUT.png "label|source.png|model.glb" ...
+// FORGE_VIEW_SIZE=520 renders larger tiles for close inspection (default 260).
 // THREE_DIR holds three@0.170.0 build/three.module.js and examples/jsm (pinned by SHA-256).
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -34,7 +35,7 @@ const page_html = `<!doctype html><meta charset="utf-8"><body style="margin:0;ba
 <script type="module">
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-const S = 260, cases = ${JSON.stringify(cases)};
+const S = ${Number(process.env.FORGE_VIEW_SIZE) || 260}, cases = ${JSON.stringify(cases)};
 const views = [['Ön', [0, 0, 1]], ['Arka', [0, 0, -1]], ['Sağ', [1, 0, 0]], ['Sol', [-1, 0, 0]], ['Çapraz', [0.7, 0.35, 0.7]]];
 const renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
 renderer.setSize(S, S);
