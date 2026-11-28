@@ -4,7 +4,8 @@ No templates or neural novel-view hallucination. Occluded concavities are not re
 import argparse,hashlib,json,time
 from pathlib import Path
 import numpy as np
-from scipy.ndimage import distance_transform_edt,map_coordinates,gaussian_filter,binary_fill_holes
+import cv2
+from scipy.ndimage import distance_transform_edt,map_coordinates,gaussian_filter,binary_erosion,binary_dilation
 from skimage.measure import marching_cubes,label
 from PIL import Image,ImageDraw
 import trimesh
@@ -37,7 +38,21 @@ def read_middlebury(root,diagnostics):
         best=int(counts.argmax())
         mask=(cc==best) if best else np.zeros(delta.shape,bool)
         edges=set(np.unique(np.concatenate([cc[0],cc[-1],cc[:,0],cc[:,-1]])).tolist())
-        clipped=best in edges
+        # Refine the coarse silhouette with foreground/background GMMs.
+        # Locally validated on all 16 diagnostic photo copies, not fixed
+        # per-object templates. Leave clipped sensor pixels observable.
+        sure_fg=binary_erosion(mask&(delta>max(85.,threshold+30.)),iterations=3)
+        sure_bg=(delta<max(24.,threshold*.6))&~binary_dilation(mask,iterations=4)
+        if sure_fg.any() and sure_bg.any():
+            gc=np.full(mask.shape,cv2.GC_PR_BGD,np.uint8)
+            gc[mask]=cv2.GC_PR_FGD;gc[sure_fg]=cv2.GC_FGD;gc[sure_bg]=cv2.GC_BGD
+            cv2.grabCut(im,gc,None,np.zeros((1,65),np.float64),np.zeros((1,65),np.float64),3,cv2.GC_INIT_WITH_MASK)
+            refined=(gc==cv2.GC_FGD)|(gc==cv2.GC_PR_FGD)
+            cc=label(refined);counts=np.bincount(cc.ravel());counts[0]=0
+            best=int(counts.argmax());candidate=(cc==best)
+            # Refuse substantial accidental foreground loss/growth.
+            if best and .8*mask.sum()<=candidate.sum()<=1.2*mask.sum():mask=candidate
+        clipped=bool(mask[0].any() or mask[-1].any() or mask[:,0].any() or mask[:,-1].any())
         # Preserve silhouette holes and record all rejected border material.
         preview=Image.new("RGB",(im.shape[1]*2,im.shape[0]))
         preview.paste(Image.fromarray(im),(0,0))
@@ -86,7 +101,10 @@ def reconstruct(data,n=96):
                 # surviving voxel to be observed by >= 3 training cameras.
                 field[i]=np.minimum(field[i],np.where(visible,q,np.inf))
                 seen[i]+=visible.astype(np.uint8)
-        field=np.where(seen>=3,field,-8.).reshape((n,)*3)
+        # A voxel seen by only 3 of 12 cameras produced disjoint ghost
+        # geometry in the real first output. Require broad camera coverage.
+        minimum_seen=max(3,int(np.ceil(.75*len(data))))
+        field=np.where(seen>=minimum_seen,field,-8.).reshape((n,)*3)
         if field.max()<=0:raise ValueError("empty intersection")
         if any(np.take(field,k,axis=i).max()>=0 for i in range(3) for k in (0,n-1)):
             extent*=1.5;continue
