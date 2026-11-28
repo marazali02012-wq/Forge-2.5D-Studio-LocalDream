@@ -73,7 +73,10 @@ any GPU:
 2. **Kaggle CPU session** (`FORGE_KAGGLE_RESEARCH=1`, `FORGE_KAGGLE_ACCELERATOR=cpu`):
    the private notebook requests no GPU/TPU, so it neither waits in the T4
    queue nor uses GPU quota. The exact `forge_mask.py` and `triposg_cpu.py`
-   sources are embedded in the private notebook.
+   sources are embedded in the private notebook. Measured on 2026-11-28:
+   setup about 4 minutes, generation about 3.5 hours per image in float32
+   (about 3.8x slower than a 4 vCPU AMX server); sessions run in parallel.
+   Jobs on this provider are reported as timed out only after 6 hours.
 
 | Setting | Purpose |
 | --- | --- |
