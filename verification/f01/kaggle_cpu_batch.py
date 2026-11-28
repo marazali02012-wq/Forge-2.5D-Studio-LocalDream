@@ -6,8 +6,9 @@ the image hash, a local record written before any submission, no resubmit
 when a notebook may already exist, and verified output hashes. Jobs run in
 parallel on Kaggle; this process only polls.
 
-Usage: python kaggle_cpu_batch.py STATE.json OUT_DIR owner case=image.png ...
-The Kaggle token comes from KAGGLE_API_TOKEN (KGAT_...).
+Usage: python kaggle_cpu_batch.py STATE.json OUT_DIR owner MAX_ACTIVE case=image.png ...
+At most MAX_ACTIVE sessions of this batch run at once. The Kaggle token comes
+from KAGGLE_API_TOKEN (KGAT_...).
 """
 import hashlib
 import json
@@ -22,7 +23,8 @@ from kaggle_provider import Kaggle, ProviderError
 
 def main():
     state_path, out, owner = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
-    cases = dict(item.split("=", 1) for item in sys.argv[4:])
+    max_active = int(sys.argv[4])
+    cases = dict(item.split("=", 1) for item in sys.argv[5:])
     provider = Kaggle(owner, os.environ["KAGGLE_API_TOKEN"], "unused-for-cpu", accelerator="cpu")
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
@@ -50,6 +52,10 @@ def main():
                     provider.create_dataset(dataset, Path(cases[case]).read_bytes(), suffix)
                     row["phase"] = "dataset"
                 elif row["phase"] == "dataset":
+                    running = sum(1 for other in state.values()
+                                  if other["phase"] in ("submitting", "submitted"))
+                    if running >= max_active:
+                        continue
                     if provider.dataset_ready(dataset):
                         if provider.notebook_exists(slug, dataset):
                             row["phase"] = "submitted"

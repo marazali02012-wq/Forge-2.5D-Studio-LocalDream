@@ -52,3 +52,46 @@ node verification/f01/kaggle_editor_qa.mjs /path/to/editor-ready.glb /path/to/ev
 
 The browser QA requires Playwright Chromium and gltf-validator. It uses the
 actual HTTP handler and a real GLB, with a local double for Kaggle status and output.
+
+## F01 GPU-free generation (no Kaggle GPU queue)
+
+The same `/v1/kaggle-jobs` API, SQLite job table, duplicate protection,
+mobile geometry gate and editor dialog (**Sunucuda 3D üret**) can run without
+any GPU:
+
+1. **Server CPU** (`FORGE_LOCAL_TRIPOSG=1`): the Forge server itself runs
+   `forge_mask.py` (BiRefNet soft alpha, MIT, optional SAM2.1 occluder bridge,
+   Apache-2.0) and `triposg_cpu.py` (official TripoSG weights, MIT, revision
+   `2c1c516d22d58db486a058d98d31bb6177344e06`, float32 hierarchical Lewiner
+   extraction on CPU). No third-party inference service receives the image.
+   Needs about 16 GB RAM (one fp32 TripoSG process holds 7-10 GB; run one at
+   a time, two processes on 4 vCPU also oversubscribe threads) and 8 GB for
+   weights. Measured on
+   4 vCPU (Xeon, AMX): 50 flow steps take about 22-23 minutes in float32;
+   extraction time is recorded per model in the F01 evidence. Pre-download
+   the weights; requests never download models (`HF_HUB_OFFLINE=1`).
+2. **Kaggle CPU session** (`FORGE_KAGGLE_RESEARCH=1`, `FORGE_KAGGLE_ACCELERATOR=cpu`):
+   the private notebook requests no GPU/TPU, so it neither waits in the T4
+   queue nor uses GPU quota. The exact `forge_mask.py` and `triposg_cpu.py`
+   sources are embedded in the private notebook.
+
+| Setting | Purpose |
+| --- | --- |
+| `FORGE_LOCAL_TRIPOSG=1` | Enables the server-CPU provider (mutually exclusive with `FORGE_KAGGLE_RESEARCH`) |
+| `FORGE_LOCAL_WORK_DIR` | Private (0700) directory for per-job inputs, logs and outputs |
+| `FORGE_LOCAL_PYTHON` | Python with torch 2.5.1 CPU, diffusers 0.32.2, transformers 4.49.0, timm, kornia, sam2 |
+| `FORGE_TRIPOSG_SOURCE`, `FORGE_TRIPOSG_WEIGHTS` | TripoSG source checkout (`fc5c409…`) and weights directory |
+| `FORGE_SAM2_CHECKPOINT` | Optional SAM2.1 tiny checkpoint (SHA-256 `7402e0d8…`) for occluder bridging |
+| `FORGE_KAGGLE_ACCELERATOR=cpu` | Kaggle CPU session instead of T4 GPU |
+| `FORGE_KAGGLE_BF16=1` | Allow bfloat16 transformer autocast when the Kaggle CPU has AMX/AVX512-BF16 |
+
+The detail-preserving mask replaces upstream TripoSG preprocessing, which
+binarises RMBG-1.4 alpha with Otsu and deletes parts under 200 px (HARD10:
+peacock tail and bicycle shadow failures). RMBG-1.4 is not used on these paths.
+Inputs and cut-outs are deleted after the GLB and its hashes are verified.
+
+```sh
+python verification/f01/local_triposg_qa.py   # provider lifecycle, restart, failure, tamper
+FORGE_API_TOKEN=... node verification/f01/local_editor_qa.mjs http://127.0.0.1:8765 image.png evidence/
+node verification/f01/glb_views.mjs THREE_DIR views.png "label|source.png|model.glb"
+```
