@@ -27,7 +27,7 @@ jobs:
       - name: Recover camera poses without reference calibration and create mesh
         env:
           OPENBLAS_NUM_THREADS: '2'
-        run: python verification/f01/colmap_photo_probe.py /tmp/dino f01-colmap-evidence
+        run: python verification/f01/colmap_photo_probe.py /tmp/dino f01-colmap-evidence --image-up right
       - name: External OpenMVS dense geometry (AGPL tool, isolated)
         run: |
           curl -fL --retry 2 --max-time 120 --max-filesize 170000000 https://github.com/cdcseacave/openMVS/releases/download/v2.4.0/OpenMVS_Ubuntu_x64.zip -o /tmp/openmvs.zip
@@ -45,7 +45,24 @@ jobs:
           export LD_LIBRARY_PATH="$(find /tmp/openmvs -type f -name '*.so*' -printf '%h\n' | sort -u | paste -sd: -):${LD_LIBRARY_PATH:-}"
           cd f01-colmap-evidence
           "$interface" -i "$PWD/undistorted" -o "$PWD/scene.mvs" --image-folder "$PWD/undistorted/images"
-          "$densify" scene.mvs --resolution-level 0 --max-threads 4
+          # OpenMVS 2.4.0 uses <image stem>.mask.png; label zero is ignored.
+          # Verify identity of the undistorted image grid before reusing masks.
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import numpy as np
+          d=Path('dense_masks');d.mkdir(exist_ok=False)
+          photos=sorted(Path('undistorted/images').glob('*.png'));assert len(photos)>=36
+          for p in photos:
+              orig=np.asarray(Image.open(Path('images')/p.name).convert('RGB'))
+              fixed=np.asarray(Image.open(p).convert('RGB'))
+              assert orig.shape==fixed.shape and np.mean(np.abs(orig.astype(float)-fixed))<1.,f'undistortion changed mask grid: {p.name}'
+              m=np.asarray(Image.open(Path('masks')/(p.name+'.png')).convert('L'))
+              assert m.shape==fixed.shape[:2] and set(np.unique(m))<={0,255} and .002<(m>0).mean()<.8
+              Image.fromarray(m).save(d/(p.stem+'.mask.png'))
+          print('Validated aligned foreground masks:',len(photos))
+          PY
+          "$densify" scene.mvs --resolution-level 0 --max-threads 4 --mask-path "$PWD/dense_masks" --ignore-mask-label 0
           "$mesh" scene_dense.mvs -p scene_dense.ply --max-threads 4
           python - <<'PY'
           import trimesh,numpy as np,json
