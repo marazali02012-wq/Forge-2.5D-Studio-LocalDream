@@ -61,6 +61,9 @@ def main():
     scale=(sv*sign).sum()/(xc*xc).sum();aligned=scale*xc@rot+y.mean(0)
     report["aligned_camera_rmse_pct"]=float(np.sqrt(np.mean(np.sum((aligned-y)**2,axis=1)))/np.linalg.norm(np.ptp(y,axis=0))*100)
     (a.output/"report.json").write_text(json.dumps(report,indent=2))
+    # Reference calibration is used ONLY after SfM. A large camera drift
+    # must not be accepted solely on the basis of reprojection error.
+    if report["aligned_camera_rmse_pct"]>10:raise ValueError("camera trajectory alignment acceptance failed")
     # Never substitute sparse point clouds for a surface.
     m=reconstruct(rows);coverage=colorize(m,rows)
     dst=a.output/"model.glb";m.export(dst,include_normals=True)
