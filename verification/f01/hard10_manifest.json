@@ -1,0 +1,74 @@
+{
+  "version": "hard10-r1",
+  "acceptance": "F01 overall geometry only; each case remains visually pending until four-angle inspection. F02/F03 independent part reconstruction excluded.",
+  "private_case": {
+    "id": "01-warrior",
+    "source": "user-provided pixel art, retained outside public repo",
+    "challenge": "sword, cape, armor, busy background"
+  },
+  "public_cases": [
+    {
+      "id": "02-cafe",
+      "file": "Waiting in a café (Unsplash).jpg",
+      "category": "person",
+      "license": "CC0",
+      "challenge": "seated person with furniture; occluded limbs, busy background"
+    },
+    {
+      "id": "03-peacock",
+      "file": "Peacock on display.jpg",
+      "category": "animal",
+      "license": "CC0",
+      "challenge": "thin feathers, spread tail, animal silhouette"
+    },
+    {
+      "id": "04-dragon",
+      "file": "WingedDragon.jpg",
+      "category": "drawing",
+      "license": "CC0",
+      "challenge": "historic woodcut; wings, tail, legs, fine linework"
+    },
+    {
+      "id": "05-bicycle",
+      "file": "Bike-side.jpg",
+      "category": "vehicle",
+      "license": "CC0",
+      "challenge": "spokes, frame holes, thin tubes"
+    },
+    {
+      "id": "06-clock",
+      "file": "Clock (movement) MET 268173.jpg",
+      "category": "mechanical",
+      "license": "CC0",
+      "challenge": "gears, gaps, overlapping parts"
+    },
+    {
+      "id": "07-armor",
+      "file": "Armor for Field and Tournament MET sfma42.50.27 156626.jpg",
+      "category": "equipment",
+      "license": "CC0",
+      "challenge": "armor plates, openings, thin edges"
+    },
+    {
+      "id": "08-chair",
+      "file": "Ornamental chair from the Great Exhibition.jpg",
+      "category": "furniture",
+      "license": "CC BY 2.0",
+      "challenge": "ornament, legs, open back"
+    },
+    {
+      "id": "09-portal",
+      "file": "Albi-cathedral-gothic-portal-street-view.jpg",
+      "category": "architecture",
+      "license": "CC0",
+      "challenge": "architectural relief and street occlusion"
+    },
+    {
+      "id": "10-market",
+      "file": "Market vendor with fresh vegetables.jpg",
+      "category": "scene",
+      "license": "CC0",
+      "challenge": "multi-object clutter; no independent separation claim in F01"
+    }
+  ]
+}
