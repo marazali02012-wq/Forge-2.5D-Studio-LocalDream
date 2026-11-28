@@ -1,0 +1,64 @@
+name: F01 user photos without calibration files
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/user_photo_worker.py','.github/workflows/forge-f01-user-photos.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  photos:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install pycolmap==3.12.1 numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0 opencv-python-headless==4.10.0.84 numba==0.60.0 vtk==9.6.2
+          python -m py_compile verification/f01/user_photo_worker.py
+      - name: Real photos only and verified external OpenMVS
+        run: |
+          curl -fL --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoRing.zip -o /tmp/dino.zip
+          mkdir /tmp/dino /tmp/userphotos
+          unzip -q /tmp/dino.zip -d /tmp/dino
+          find /tmp/dino -type f -iname '*.png' -exec cp {} /tmp/userphotos/ \;
+          test "$(find /tmp/userphotos -type f | wc -l)" = 48
+          test "$(find /tmp/userphotos -type f ! -iname '*.png' | wc -l)" = 0
+          curl -fL --retry 2 --max-time 120 --max-filesize 170000000 https://github.com/cdcseacave/openMVS/releases/download/v2.4.0/OpenMVS_Ubuntu_x64.zip -o /tmp/openmvs.zip
+          echo '7104ae1ddd6ca38fbca9e0e4a70b20af59e21e0b497eb7181c864fbf38ca8d00  /tmp/openmvs.zip' | sha256sum -c -
+          mkdir /tmp/openmvs && unzip -q /tmp/openmvs.zip -d /tmp/openmvs
+          interface="$(find /tmp/openmvs -type f -name InterfaceCOLMAP -print -quit)"
+          echo "OPENMVS_BIN=$(dirname "$interface")" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$(find /tmp/openmvs -type f -name '*.so*' -printf '%h\n' | sort -u | paste -sd: -)" >> "$GITHUB_ENV"
+          chmod +x "$(dirname "$interface")/InterfaceCOLMAP" "$(dirname "$interface")/DensifyPointCloud" "$(dirname "$interface")/ReconstructMesh"
+      - name: Run real production-style photo worker without benchmark camera files
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+        run: python verification/f01/user_photo_worker.py /tmp/userphotos f01-user-photo-evidence --openmvs-bin "$OPENMVS_BIN" --image-up right
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Independent final GLB validation
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const d='f01-user-photo-evidence';const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(d+'/model.glb')));
+          fs.writeFileSync(d+'/validation.json',JSON.stringify(v.issues,null,2));
+          if(v.issues.numErrors||v.issues.numWarnings)process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-user-photo-evidence
+          path: |
+            f01-user-photo-evidence/*.json
+            f01-user-photo-evidence/model.glb
+            f01-user-photo-evidence/model-views.png
+            f01-user-photo-evidence/dense.glb
+            f01-user-photo-evidence/lod/report.json
