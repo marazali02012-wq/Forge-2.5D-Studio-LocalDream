@@ -2,7 +2,7 @@ name: F01 direct text to real 3D Shap-E
 on:
   push:
     branches: [forge-r70-surface-lab]
-    paths: ['verification/f01/shap_e_text_probe.py','.github/workflows/forge-f01-text.yml']
+    paths: ['verification/f01/shap_e_text_probe.py','verification/f01/shap_e_mc_lookup.py','.github/workflows/forge-f01-text.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,6 +15,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: forge-text-pip-v1
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: forge-f01-shape-hf-v1
       - name: Install public CPU text-to-3D dependencies
         run: |
           pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
