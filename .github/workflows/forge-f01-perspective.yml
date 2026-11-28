@@ -1,0 +1,50 @@
+name: F01 real calibrated multi-view photos
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/perspective_photo_probe.py','.github/workflows/forge-f01-perspective.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  photo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU geometry dependencies
+        run: pip install numpy==1.26.4 scipy==1.13.1 scikit-image==0.24.0 trimesh==4.0.5 networkx==3.4.2 Pillow==10.4.0
+      - name: Download official real photo calibration benchmark
+        run: |
+          curl --fail --location --retry 2 --max-time 90 --max-filesize 20000000 https://vision.middlebury.edu/mview/data/data/dinoSparseRing.zip -o /tmp/dino.zip
+          mkdir /tmp/dino
+          unzip -q /tmp/dino.zip -d /tmp/dino
+      - name: Real perspective reconstruction and held-out silhouette evaluation
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+        run: python verification/f01/perspective_photo_probe.py /tmp/dino f01-photo-evidence
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Independent GLB check
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const dir='f01-photo-evidence';fs.mkdirSync(dir,{recursive:true});
+          if(!fs.existsSync(dir+'/model.glb'))throw Error('No actual mesh');
+          const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(dir+'/model.glb')));
+          fs.writeFileSync(dir+'/validation.json',JSON.stringify(v.issues,null,2));
+          if(v.issues.numErrors||v.issues.numWarnings)process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-perspective-evidence
+          path: f01-photo-evidence/
