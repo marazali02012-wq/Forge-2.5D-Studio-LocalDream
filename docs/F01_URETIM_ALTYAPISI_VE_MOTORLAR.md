@@ -38,6 +38,11 @@ Arka plan ve maske:
 | --- | --- | --- | --- | --- | --- |
 | Savaşçı (özel) | Kaggle T4, otomatik iş | 183,8 sn (model yükleme dahil) + ~2 sa kuyruk | 1.905.082 yüz, GLB `bca8b2a0…` | Geçti: 59.050 üçgen, 27/27 bileşen, en büyük sapma %0,16450 | Yalnız sayısal (özel) |
 | Bisiklet (CC0) | Bu oturumun sunucusu, 4 vCPU, float32 | 55 dk: difüzyon 27,6, yoğun ızgara 19,1, 512 bandı 8,3 | 730.036 yüz, 118 bileşen, kapalı, Khronos 0/0 | Geçti: 58.494 üçgen, 118/118, en büyük sapma %0,146 | [görüntü](../verification/f01/evidence/hard10-bicycle-triposg-cpu.jpg), [json](../verification/f01/evidence/hard10-bicycle-triposg-cpu.json) |
+| Tavuskuşu (CC0) | Bu oturumun sunucusu | 48,4 dk | 669.516 yüz, 97 bileşen, kapalı, Khronos 0/0 | Geçti: 59.014 üçgen, 97/97, en büyük sapma %0,196 | [görüntü](../verification/f01/evidence/hard10-peacock-triposg.jpg), [json](../verification/f01/evidence/hard10-peacock-triposg.json) |
+| Kafe (CC0), canlı editör zinciri | Kaggle CPU oturumu | 3,46 sa | 1.667.972 yüz, 483 bileşen, kapalı, Khronos 0/0 | Geçti: 58.620 üçgen, 483/483 | [görüntü](../verification/f01/evidence/hard10-cafe-kaggle-cpu.jpg), [zincir](../verification/f01/evidence/hard10-cafe-live-chain.jpg), [json](../verification/f01/evidence/hard10-cafe-kaggle-cpu.json) |
+| Zırh (CC0) | Kaggle CPU toplu | 3,47 sa | 517.566 yüz, 3 bileşen, kapalı, Khronos 0/0 | Geçti: 59.000 üçgen, 3/3, en büyük sapma %0,024 | [görüntü](../verification/f01/evidence/hard10-armor-triposg.jpg), [json](../verification/f01/evidence/hard10-armor-triposg.json) |
+| Ejderha (CC0 gravür) | Kaggle CPU toplu | 3,92 sa | 739.718 yüz, 10 bileşen, kapalı, Khronos 0/0 | Geçti: 59.000 üçgen, 10/10, en büyük sapma %0,036 | [görüntü](../verification/f01/evidence/hard10-dragon-triposg.jpg), [json](../verification/f01/evidence/hard10-dragon-triposg.json) |
+| Savaşçı (özel), BiRefNet ile yeniden | Bu oturumun sunucusu | 56,7 dk | 1.692.252 yüz, 8 bileşen | Geçti: 59.012 üçgen, 8/8, en büyük sapma %0,058 | Yalnız sayısal (özel) |
 
 Hassasiyet A/B (aynı gizli temsil, 32³/64³ duman ızgarası): bf16 çözücü 2,6 kat hızlı, ama
 37→34 bileşen ve en büyük sapma %15,2 verdi; reddedildi. 1024³ çıkarım (derinlik 10)
