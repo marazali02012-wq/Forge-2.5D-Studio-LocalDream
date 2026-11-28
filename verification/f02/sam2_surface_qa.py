@@ -40,6 +40,9 @@ def main():
             masks,scores,_=predictor.predict(point_coords=np.array([[x,y]],np.float32),point_labels=np.array([1],np.int32),multimask_output=True)
         # Choose highest score nonempty mask including click, with no claim
         # of semantic correctness. Unknown/unobserved faces stay unlabeled.
+        masks=np.asarray(masks)
+        if masks.ndim!=3 or masks.shape[1:]!=ids.shape or not np.isfinite(masks).all():raise ValueError('invalid SAM2 mask')
+        masks=masks>0.5  # predictor returns binary masks as float32 on this version
         eligible=[j for j,v in enumerate(masks) if v[y,x] and (v&(ids>=0)).any()]
         if not eligible:raise ValueError("no real mask includes click")
         k=max(eligible,key=lambda j:float(scores[j]));mask=np.asarray(masks[k],bool)&(ids>=0)
