@@ -40,6 +40,19 @@ def main():
     opts=dict(variant="fp16",use_safetensors=True,torch_dtype=torch.float32,local_files_only=True)
     prior=PriorTransformer.from_pretrained(base/"prior",**opts)
     renderer=ShapERenderer.from_pretrained(base/"renderer",**opts)
+    # CI log confirmed the published fp16 safetensors are missing both
+    # deterministic marching-cubes buffers. Zero masks mean no triangles.
+    from shap_e_mc_lookup import create_mc_lookup_table
+    cases,masks=create_mc_lookup_table()
+    renderer.mesh_decoder.cases.copy_(cases)
+    renderer.mesh_decoder.masks.copy_(masks)
+    assert masks.any() and not masks[0].any() and not masks[255].any()
+    # Validate the actual decoder BEFORE running the expensive learned prior.
+    q=torch.linspace(-1,1,17);x,y,z=torch.meshgrid(q,q,q,indexing="ij")
+    check=renderer.mesh_decoder(.55**2-x*x-y*y-z*z,torch.tensor([-1.,-1.,-1.]),torch.tensor([2.,2.,2.]))
+    assert len(check.faces)>100 and torch.isfinite(check.verts).all()
+    print("Restored official marching-cubes buffers; decoder preflight:",len(check.verts),len(check.faces),flush=True)
+    del check
     encoder=CLIPTextModelWithProjection.from_pretrained(base/"text_encoder",**opts)
     tokenizer=CLIPTokenizer.from_pretrained(base/"tokenizer",local_files_only=True)
     scheduler=HeunDiscreteScheduler.from_pretrained(base/"scheduler",local_files_only=True)
@@ -50,6 +63,8 @@ def main():
         with torch.no_grad():
             lat=pipe(prompt,num_inference_steps=a.steps,guidance_scale=15.0,generator=torch.Generator(device="cpu").manual_seed(a.seed),output_type="latent").images
             assert torch.isfinite(lat).all()
+            from safetensors.torch import save_file
+            save_file({"latent":lat.detach().cpu().contiguous()},str(a.output/("text-%02d-latent.safetensors"%i)))
             raw=pipe.shap_e_renderer.decode_to_mesh(lat[:1],torch.device("cpu"),grid_size=a.grid,query_batch_size=4096)
         v=raw.verts.detach().cpu().numpy();f=raw.faces.detach().cpu().numpy()
         c=np.stack([raw.vertex_channels[k].detach().cpu().numpy() for k in "RGB"],axis=1)
