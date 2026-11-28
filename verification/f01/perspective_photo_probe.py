@@ -28,13 +28,20 @@ def read_middlebury(root,diagnostics):
         bg=np.median(border,axis=0)
         delta=np.linalg.norm(rgb-bg,axis=2)
         border_delta=np.linalg.norm(border-bg,axis=1)
-        threshold=max(12.,float(np.quantile(border_delta,.90))+8.)
-        fg=delta>threshold
-        cc=label(fg);counts=np.bincount(cc.ravel());counts[0]=0
-        edges=set(np.unique(np.concatenate([cc[0],cc[-1],cc[:,0],cc[:,-1]])).tolist())
-        valid=[k for k in range(1,len(counts)) if k not in edges]
-        best=max(valid,key=lambda k:counts[k],default=0)
-        mask=(cc==best) if best else np.zeros(cc.shape,bool)
+        # Actual diagnostic dinoSR0001 shows a dim brown support strip
+        # joining the border to the object below RGB distance 40.
+        # Prefer the lowest threshold that separates a dominant component.
+        base=max(40.,float(np.quantile(border_delta,.90))+8.)
+        mask=np.zeros(delta.shape,bool);best=0;counts=np.array([0]);edges=set()
+        threshold=base
+        for threshold in (base,base+10,base+20,base+30):
+            fg=delta>threshold
+            cc=label(fg);counts=np.bincount(cc.ravel());counts[0]=0
+            edges=set(np.unique(np.concatenate([cc[0],cc[-1],cc[:,0],cc[:,-1]])).tolist())
+            valid=[k for k in range(1,len(counts)) if k not in edges]
+            best=max(valid,key=lambda k:counts[k],default=0)
+            mask=(cc==best) if best else np.zeros(cc.shape,bool)
+            if .002<mask.mean()<.8 and counts[best]>=.85*counts.max():break
         # Preserve silhouette holes and record all rejected border material.
         preview=Image.new("RGB",(im.shape[1]*2,im.shape[0]))
         preview.paste(Image.fromarray(im),(0,0))
@@ -42,7 +49,7 @@ def read_middlebury(root,diagnostics):
         preview.paste(Image.fromarray(overlay),(im.shape[1],0))
         preview.save(diagnostics/(Path(name).stem+".jpg"))
         print(json.dumps(dict(view=name,background=bg.tolist(),threshold=threshold,area=float(mask.mean()),largest=int(counts.max()),selected=int(counts[best]),excluded_border_pixels=int(sum(counts[k] for k in edges if k>0)))),flush=True)
-        if not .002<mask.mean()<.8 or counts[best]<.35*counts.max():raise ValueError("bad/clipped foreground "+name)
+        if not .002<mask.mean()<.8 or counts[best]<.85*counts.max():raise ValueError("bad/clipped foreground "+name)
         ys,xs=np.where(mask);uv=np.array([xs.mean(),ys.mean(),1.])
         C=-R.T@t;ray=R.T@np.linalg.solve(K,uv);ray/=np.linalg.norm(ray)
         data.append(dict(name=name,P=P,C=C,ray=ray,mask=mask,im=im,hash=hashlib.sha256((file.parent/name).read_bytes()).hexdigest()))
