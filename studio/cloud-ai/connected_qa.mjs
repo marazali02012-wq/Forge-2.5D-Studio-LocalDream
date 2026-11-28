@@ -78,7 +78,24 @@ try{
   batch.downloads.push({name,bytes:bytes.length,errors:v.issues.numErrors,warnings:v.issues.numWarnings});
  }
  assert.notDeepEqual(fs.readFileSync(dir+'/f01-batch-1-chair.glb'),fs.readFileSync(dir+'/f01-batch-3-teapot.glb'));
- await page.screenshot({path:dir+'/f01-batch-results.png'});await page.locator('#forgeBatchClose').click();
+ assert.ok((await page.locator('#forgeBatchResults').innerText()).includes('Geçersiz veya boş görsel'));
+ assert.equal(await page.locator('#forgeBatchChoose').innerText(),'Görselleri seç');
+ await page.screenshot({path:dir+'/f01-batch-results.png'});
+ // A real generation starts, then stop must prevent the second POST.
+ await page.locator('#forgeBatchFiles').setInputFiles([
+  {name:'chair.png',mimeType:'image/png',buffer:chair},
+  {name:'teapot.png',mimeType:'image/png',buffer:fs.readFileSync('/tmp/triposr/examples/teapot.png')}
+ ]);
+ const stopPosts=[];const stopListener=r=>{if(r.url()===api+'/v1/generate'&&r.method()==='POST')stopPosts.push(r.url())};
+ page.on('request',stopListener);
+ const firstPost=page.waitForRequest(r=>r.url()===api+'/v1/generate'&&r.method()==='POST');
+ await page.locator('#forgeBatchStart').click();await firstPost;
+ await page.locator('#forgeBatchStop').click();
+ await page.waitForFunction(()=>document.getElementById('forgeBatchStatus').textContent==='Hazır: 1 · Hata: 0 · Atlanan: 1',null,{timeout:350000});
+ page.off('request',stopListener);assert.equal(stopPosts.length,1);
+ assert.equal(await page.locator('#forgeBatchResults a').count(),1);assert.ok(await page.locator('#forgeBatchChoose').isEnabled());
+ batch.stop={posts:stopPosts.length,ready:1,skipped:1};
+ await page.screenshot({path:dir+'/f01-batch-stop.png'});await page.locator('#forgeBatchClose').click();
  assert.deepEqual(errors,[]);
  const report={batch,quality,actualUpload:true,actualInference:true,httpStatus:response.status(),authRejected:bad.status,invalidRejected:invalid.status,bytes:data.length,...result,glbErrors:validation.issues.numErrors,glbWarnings:validation.issues.numWarnings,errors,requests:requests.filter(s=>/^https?:/.test(s)).map(s=>new URL(s).origin)};
  fs.writeFileSync(dir+'/report.json',JSON.stringify(report,null,2));console.log(report);
