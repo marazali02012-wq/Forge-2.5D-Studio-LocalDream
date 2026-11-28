@@ -2,7 +2,7 @@
 Bounded binary request: big-endian u32 JSON length, UTF-8 JSON {sizes,image_up},
 then concatenated photo bytes. No client paths, archives or shell commands.
 """
-import hashlib,hmac,json,os,pathlib,signal,struct,subprocess,sys,tempfile
+import hashlib,hmac,json,os,pathlib,signal,struct,subprocess,sys,tempfile,time
 from PIL import Image
 from private_api_extended import ExtendedHandler,BoundedServer,TOKEN,ORIGINS,LOCK,ROOT,ENABLED,PROBE,fits_static
 WORKER=ROOT.parent.parent/"verification/f01/user_photo_worker.py"
@@ -54,7 +54,22 @@ class PhotoHandler(ExtendedHandler):
         try:
             with tempfile.TemporaryDirectory(prefix="forge-photos-") as td:
                 root=pathlib.Path(td);photos=root/"photos";photos.mkdir();output=root/"result"
-                try:up=receive(self.rfile,length,photos)
+                try:
+                    # Only authenticated, bounded uploads reach this point.
+                    # Spool completely before semantic validation; an early
+                    # duplicate rejection otherwise resets the client's upload.
+                    deadline=time.monotonic()+120
+                    remaining=length
+                    with tempfile.TemporaryFile(dir=root) as payload:
+                        while remaining:
+                            if time.monotonic()>deadline:raise TimeoutError("upload deadline")
+                            chunk=self.rfile.read1(min(65536,remaining))
+                            if not chunk:raise ValueError("truncated upload")
+                            payload.write(chunk);remaining-=len(chunk)
+                        payload.seek(0)
+                        up=receive(payload,length,photos)
+                except TimeoutError:
+                    self.respond(408,{"error":"Fotoğraf yüklemesi zaman aşımına uğradı."});return
                 except (ValueError,TypeError,OSError,Image.DecompressionBombError,struct.error):
                     self.respond(400,{"error":"Geçersiz veya tekrarlanan fotoğraf grubu. 12–48 PNG/JPEG/WebP gerekli."});return
                 env=dict(os.environ)
