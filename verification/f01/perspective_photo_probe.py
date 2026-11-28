@@ -9,7 +9,8 @@ from skimage.measure import marching_cubes,label
 from PIL import Image,ImageDraw
 import trimesh
 
-def read_middlebury(root):
+def read_middlebury(root,diagnostics):
+    diagnostics.mkdir(parents=True,exist_ok=True)
     file=next(root.rglob("*_par.txt"))
     rows=file.read_text().splitlines();data=[]
     for row in rows:
@@ -19,12 +20,29 @@ def read_middlebury(root):
         K=x[:9].reshape(3,3);R=x[9:18].reshape(3,3);t=x[18:]
         if not np.isfinite(x).all() or not np.allclose(R@R.T,np.eye(3),atol=.003):raise ValueError("invalid camera")
         P=K@np.column_stack([R,t]);im=np.asarray(Image.open(file.parent/name).convert("RGB"))
-        # Middlebury controlled dark background. Reject nonconforming inputs;
-        # this benchmark mask is not a generic photo segmentation algorithm.
-        fg=im.max(2)>18
+        # Estimate actual studio background from perimeter pixels; do not
+        # use a fixed black threshold. Keep the largest non-border component
+        # only if it represents the dominant foreground, otherwise reject.
+        rgb=im.astype(np.float32)
+        border=np.concatenate([rgb[:4].reshape(-1,3),rgb[-4:].reshape(-1,3),rgb[:,:4].reshape(-1,3),rgb[:,-4:].reshape(-1,3)])
+        bg=np.median(border,axis=0)
+        delta=np.linalg.norm(rgb-bg,axis=2)
+        border_delta=np.linalg.norm(border-bg,axis=1)
+        threshold=max(12.,float(np.quantile(border_delta,.90))+8.)
+        fg=delta>threshold
         cc=label(fg);counts=np.bincount(cc.ravel());counts[0]=0
-        mask=(cc>0)&(counts[cc]>=max(8,int(counts.max()*.001)))
-        if not .002<mask.mean()<.8 or mask[0].any() or mask[-1].any() or mask[:,0].any() or mask[:,-1].any():raise ValueError("bad/clipped foreground "+name)
+        edges=set(np.unique(np.concatenate([cc[0],cc[-1],cc[:,0],cc[:,-1]])).tolist())
+        valid=[k for k in range(1,len(counts)) if k not in edges]
+        best=max(valid,key=lambda k:counts[k],default=0)
+        mask=(cc==best) if best else np.zeros(cc.shape,bool)
+        # Preserve silhouette holes and record all rejected border material.
+        preview=Image.new("RGB",(im.shape[1]*2,im.shape[0]))
+        preview.paste(Image.fromarray(im),(0,0))
+        overlay=im.copy();overlay[~mask]=(overlay[~mask].astype(np.float32)*.35).astype(np.uint8)
+        preview.paste(Image.fromarray(overlay),(im.shape[1],0))
+        preview.save(diagnostics/(Path(name).stem+".jpg"))
+        print(json.dumps(dict(view=name,background=bg.tolist(),threshold=threshold,area=float(mask.mean()),largest=int(counts.max()),selected=int(counts[best]),excluded_border_pixels=int(sum(counts[k] for k in edges if k>0)))),flush=True)
+        if not .002<mask.mean()<.8 or counts[best]<.35*counts.max():raise ValueError("bad/clipped foreground "+name)
         ys,xs=np.where(mask);uv=np.array([xs.mean(),ys.mean(),1.])
         C=-R.T@t;ray=R.T@np.linalg.solve(K,uv);ray/=np.linalg.norm(ray)
         data.append(dict(name=name,P=P,C=C,ray=ray,mask=mask,im=im,hash=hashlib.sha256((file.parent/name).read_bytes()).hexdigest()))
@@ -99,14 +117,14 @@ def silhouette(m,r):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument("dataset",type=Path);p.add_argument("output",type=Path);a=p.parse_args()
-    a.output.mkdir(parents=True,exist_ok=False);data=read_middlebury(a.dataset)
+    a.output.mkdir(parents=True,exist_ok=False);data=read_middlebury(a.dataset,a.output/'masks')
     test=data[::4];train=[r for i,r in enumerate(data) if i%4!=0]
     t=time.monotonic();m=reconstruct(train);coverage=colorize(m,train)
-    iou=[];sheet=Image.new("RGB",(640*2,480*len(test)),(30,35,45))
+    iou=[];h,w=test[0]["mask"].shape;sheet=Image.new("RGB",(w*2,h*len(test)),(30,35,45))
     for i,r in enumerate(test):
         pred=silhouette(m,r);truth=r["mask"];iou.append(float((pred&truth).sum()/max(1,(pred|truth).sum())))
         im=r["im"].copy();im[truth&~pred]=[240,50,50];im[pred&~truth]=[20,190,240]
-        sheet.paste(Image.fromarray(r["im"]),(0,480*i));sheet.paste(Image.fromarray(im),(640,480*i))
+        sheet.paste(Image.fromarray(r["im"]),(0,h*i));sheet.paste(Image.fromarray(im),(w,h*i))
     sheet.save(a.output/"heldout-views.jpg")
     # Four independent camera-angle mesh previews, no use of input pixels as geometry.
     v=np.asarray(m.vertices).copy();v-=(v.min(0)+v.max(0))/2;v*=2/np.ptp(v,axis=0).max()
