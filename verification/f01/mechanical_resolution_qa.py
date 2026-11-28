@@ -38,27 +38,47 @@ def compare(a,b):
 def main():
     p=argparse.ArgumentParser();p.add_argument("baseline",type=Path);p.add_argument("out",type=Path);a=p.parse_args()
     a.out.mkdir(exist_ok=False);report={}
+    # QA-only worker: reuse the exact RGB tensor source saved by the baseline,
+    # instead of running potentially variable background removal a second time.
+    worker_source=Path("studio/cloud-ai/cpu_probe.py").read_text()
+    anchor='    if sample:\n'
+    assert worker_source.count(anchor)==1,"upstream worker changed"
+    worker_source=worker_source.replace(anchor,'''    if os.getenv("FORGE_QA_FROZEN_RGB"):
+        frozen=pathlib.Path(os.environ["FORGE_QA_FROZEN_RGB"])
+        with Image.open(frozen) as saved:
+            assert saved.mode=="RGB" and saved.format=="PNG"
+            im=saved.copy()
+        report["input_sha256"]=hashlib.sha256(frozen.read_bytes()).hexdigest()
+        report["qa_frozen_rgb"]=True
+    elif sample:
+''',1)
+    compile(worker_source,"frozen_worker.py","exec")
+    worker=a.out/"frozen_worker.py";worker.write_text(worker_source)
     for name,resolutions in [("vise",[192]),("gears",[192,256])]:
         base=a.baseline/name;source=base/"source.png";base_glb=base/"generated.glb"
         original=trimesh.load(base_glb,force="mesh",process=False)
         old=json.loads((base/"report.json").read_text())
         assert old["real_generation"] and old["input_sha256"]==sha(source)
+        frozen=base/"input.png"
+        with Image.open(frozen) as im:assert im.mode=="RGB" and im.format=="PNG"
         folder=a.out/name;folder.mkdir()
         render(original,source,folder/"128.png")
-        report[name]={"input_sha256":sha(source),"baseline_sha256":sha(base_glb),"128":metrics(original)}
+        report[name]={"input_sha256":sha(source),"baseline_sha256":sha(base_glb),"frozen_rgb_sha256":sha(frozen),"128":metrics(original)}
         for res in resolutions:
             dest=folder/str(res);dest.mkdir()
             row={"resolution":res}
             try:
-                env=dict(os.environ,FORGE_IMAGE=str(source.resolve()),FORGE_OUTPUT=str(dest.resolve()),FORGE_RESOLUTION=str(res))
+                env=dict(os.environ,FORGE_QA_FROZEN_RGB=str(frozen.resolve()),FORGE_OUTPUT=str(dest.resolve()),FORGE_RESOLUTION=str(res))
+                env.pop("FORGE_IMAGE",None)
                 env.pop("FORGE_RELAX",None)
                 t=time.monotonic()
-                r=subprocess.run([sys.executable,"studio/cloud-ai/cpu_probe.py"],env=env,timeout=480,capture_output=True,text=True)
+                r=subprocess.run([sys.executable,str(worker.resolve())],env=env,timeout=480,capture_output=True,text=True)
                 (dest/"inference.log").write_text(r.stdout+"\n"+r.stderr)
                 if r.returncode:raise RuntimeError("real inference failed")
                 raw=json.loads((dest/"report.json").read_text())
-                assert raw["real_generation"] and raw["input_sha256"]==sha(source) and raw["resolution"]==res
-                assert sha(dest/"input.png")==sha(base/"input.png"),"preprocessed input changed"
+                assert raw["real_generation"] and raw["qa_frozen_rgb"] and raw["input_sha256"]==sha(frozen) and raw["resolution"]==res
+                with Image.open(dest/"input.png") as actual,Image.open(frozen) as expected:
+                    assert actual.mode==expected.mode and actual.size==expected.size and np.array_equal(np.asarray(actual),np.asarray(expected)),"frozen RGB pixels changed"
                 glb=dest/"generated.glb";m=trimesh.load(glb,force="mesh",process=False)
                 assert m.visual.kind=="vertex" and len(m.faces)>100
                 render(m,source,dest/"visual.png")
