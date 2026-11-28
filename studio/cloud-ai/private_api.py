@@ -86,10 +86,25 @@ class Handler(BaseHTTPRequestHandler):
                     if output.stat().st_size>32*1024*1024:
                         self.respond(422,{"error":"Animasyonlu model telefon bütçesini aştı."});return
                     self.respond(200,output.read_bytes(),"model/gltf-binary");return
-                data=(path/"result/generated.glb").read_bytes()
-                if len(data)>8_000_000 or struct.unpack_from("<4sII",data)!=(b"glTF",2,len(data)):raise RuntimeError("invalid model")
-                jl=struct.unpack_from("<I",data,12)[0];g=json.loads(data[20:20+jl]);p=g["meshes"][0]["primitives"][0]
-                if g["accessors"][p["attributes"]["POSITION"]]["count"]>30000 or g["accessors"][p["indices"]]["count"]>180000:
+                source=path/"result/generated.glb"
+                def fits_editor(data):
+                    if len(data)<28 or struct.unpack_from("<4sII",data)!=(b"glTF",2,len(data)):raise RuntimeError("invalid model")
+                    jl=struct.unpack_from("<I",data,12)[0];g=json.loads(data[20:20+jl]);p=g["meshes"][0]["primitives"][0]
+                    return len(data)<=8_000_000 and g["accessors"][p["attributes"]["POSITION"]]["count"]<=30000 and g["accessors"][p["indices"]]["count"]<=180000
+                data=source.read_bytes()
+                if not fits_editor(data) and os.getenv("FORGE_STATIC_LOD")=="1":
+                    # Explicit experimental opt-in; never reduce a model that already fits.
+                    # Keep original untouched, reject if no safe candidate exists.
+                    lod=path/"lod"
+                    try:
+                        proc=subprocess.run([sys.executable,str(ROOT/"lod_qa.py"),str(source),str(lod),"--fit-editor"],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20)
+                        if proc.returncode==0:
+                            selected=json.loads((lod/"report.json").read_text())["selected"]
+                            if selected and selected["accepted"] and selected["name"] in ("component_quadric_58k","component_quadric_40k","component_quadric_20k"):
+                                candidate=(lod/(selected["name"]+".glb")).read_bytes()
+                                if fits_editor(candidate):data=candidate
+                    except (OSError,ValueError,KeyError,RuntimeError,subprocess.TimeoutExpired):pass
+                if not fits_editor(data):
                     self.respond(422,{"error":"Model düzenleyici sınırını aştı. Standart çözünürlük (128) ile yeniden deneyin."});return
                 self.respond(200,data,"model/gltf-binary")
         except (ValueError,OSError,Image.DecompressionBombError):self.respond(400,{"error":"invalid image or upload"})
