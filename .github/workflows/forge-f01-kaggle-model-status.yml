@@ -1,0 +1,92 @@
+name: F01 Kaggle private model status and integrity
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['.github/workflows/forge-f01-kaggle-model-status.yml']
+permissions:
+  contents: read
+concurrency:
+  group: forge-f01-kaggle-gpu-probe
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/forge-r70-surface-lab'
+    runs-on: ubuntu-24.04
+    environment: forge-kaggle
+    timeout-minutes: 6
+    steps:
+      - name: Inspect existing model job without resubmitting
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, time, urllib.request, urllib.error
+          token=os.environ.get('KAGGLE_API_TOKEN','').strip()
+          if not token.startswith('KGAT_') or len(token)<=5 or any(not 33<=ord(c)<=126 for c in token):
+              raise SystemExit('Missing or malformed access token')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs):return None
+          opener=urllib.request.build_opener(NoRedirect())
+          def rpc(service,method,body):
+              url='https://api.kaggle.com/v1/'+service+'/'+method
+              req=urllib.request.Request(url,data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'},method='POST')
+              try:
+                  with opener.open(req,timeout=45) as r:
+                      data=json.loads(r.read(4*1024*1024))
+                      print(method+': HTTP '+str(r.status),flush=True)
+              except urllib.error.HTTPError as e:raise SystemExit(method+': HTTP '+str(e.code)) from None
+              except Exception as e:raise SystemExit(method+': '+type(e).__name__) from None
+              if not isinstance(data,dict) or data.get('error') or data.get('errorMessage') or (isinstance(data.get('code'),int) and data['code']>=400):
+                  raise SystemExit(method+': API error or unexpected schema')
+              return data
+          d='datasets.DatasetApiService';k='kernels.KernelsApiService'
+          data=rpc(d,'ListDatasets',{'group':'DATASET_SELECTION_GROUP_MY_PRIVATE','pageSize':100})
+          refs={row.get('ref','') for row in data.get('datasets',[]) if row.get('isPrivate') is True and re.fullmatch(r'[a-zA-Z0-9_-]+/forge-warrior-test',row.get('ref',''))}
+          if len(refs)!=1:raise SystemExit('Owner check failed; no job submitted')
+          owner=refs.pop().split('/')[0]
+          run='46112767724'
+          target={'userName':owner,'kernelSlug':'forge-f01-auto-model-'+run}
+          m=rpc(k,'GetKernel',target).get('metadata',{})
+          if m.get('isPrivate') is not True or m.get('enableGpu') is not True or m.get('currentVersionNumber')!=1:
+              raise SystemExit('Private GPU metadata not verified')
+          print('PRIVATE_MODEL_METADATA_OK',flush=True)
+          states=('QUEUED','RUNNING','COMPLETE','ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED','NEW_SCRIPT')
+          data=rpc(k,'GetKernelSessionStatus',target)
+          status=data.get('status')
+          if type(status) is int and 0<=status<len(states):status=states[status]
+          if status is None:
+              print('MODEL_STATUS_NOT_RETURNED; no resubmission',flush=True)
+              raise SystemExit(1)
+          if status not in states:raise SystemExit('Unexpected status enumeration')
+          print('MODEL_JOB_STATUS: '+status,flush=True)
+          if status in ('ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED'):raise SystemExit('Model job stopped; see private notebook logs')
+          if status!='COMPLETE':
+              print('MODEL_PENDING; no resubmission',flush=True)
+              raise SystemExit(0)
+          files=rpc(k,'ListKernelSessionOutput',dict(target,pageSize=100)).get('files',[])
+          from urllib.parse import urlsplit
+          import hashlib,struct
+          def get(name,max_bytes):
+              hits=[x for x in files if x.get('fileName') in (name,'forge-f01-auto/'+name)]
+              if len(hits)!=1:raise SystemExit('Missing or ambiguous expected output '+name)
+              u=urlsplit(hits[0].get('url',''));host=u.hostname or ''
+              if u.scheme!='https' or u.username or u.password or u.port not in (None,443) or not (host=='storage.googleapis.com' or host.endswith('.storage.googleapis.com') or host=='kaggleusercontent.com' or host.endswith('.kaggleusercontent.com') or host in ('www.kaggle.com','api.kaggle.com')):
+                  raise SystemExit('Unverified output host')
+              try:
+                  with opener.open(hits[0]['url'],timeout=90) as r:raw=r.read(max_bytes+1)
+                  if len(raw)>max_bytes:raise ValueError('size limit')
+                  return raw
+              except Exception as e:raise SystemExit('Private output transfer failed: '+type(e).__name__) from None
+          report=json.loads(get('report.json',65536))
+          raw=get('model.glb',150*1024*1024)
+          if report.get('run_id')!=run or report.get('actual_inference') is not True or report.get('original_sha256')!='78be6bb8d1386e5dd443965a1cf0e236b57e1af5ab8120bbf3d31033f93391f1' or report.get('glb_sha256')!=hashlib.sha256(raw).hexdigest() or report.get('bytes')!=len(raw):
+              raise SystemExit('Output identity/integrity check failed')
+          if len(raw)<20 or raw[:4]!=b'glTF' or struct.unpack_from('<II',raw,4)!=(2,len(raw)):raise SystemExit('GLB header invalid')
+          size,kind=struct.unpack_from('<I4s',raw,12)
+          if kind!=b'JSON' or size+20>len(raw):raise SystemExit('GLB JSON chunk invalid')
+          doc=json.loads(raw[20:20+size])
+          if not doc.get('meshes') or not doc.get('accessors'):raise SystemExit('GLB geometry absent')
+          print('MODEL_BYTES_INTEGRITY_OK; private files not published',flush=True)
+          print('MODEL_METRICS faces='+str(int(report['faces']))+' vertices='+str(int(report['vertices']))+' bytes='+str(len(raw))+' seconds='+str(round(float(report['seconds']),2)),flush=True)
+          print('VISUAL_AND_EDITOR_ACCEPTANCE_PENDING',flush=True)
+          PY
