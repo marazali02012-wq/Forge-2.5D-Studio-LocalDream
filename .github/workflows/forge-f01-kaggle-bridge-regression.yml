@@ -2,7 +2,7 @@ name: F01 Kaggle admission and bridge regression
 on:
   push:
     branches: [forge-r70-surface-lab]
-    paths: ['studio/cloud-ai/kaggle_provider.py','studio/cloud-ai/private_api_kaggle.py','verification/f01/kaggle_bridge_qa.py','.github/workflows/forge-f01-kaggle-bridge-regression.yml']
+    paths: ['studio/cloud-ai/kaggle_provider.py','studio/cloud-ai/private_api_kaggle.py','studio/cloud-ai/local_triposg_provider.py','studio/cloud-ai/forge_mask.py','studio/cloud-ai/triposg_kaggle_cpu_kernel.py','studio/cloud-ai/triposg_cpu.py','verification/f01/kaggle_bridge_qa.py','verification/f01/local_triposg_qa.py','verification/f01/forge_mask_qa.py','.github/workflows/forge-f01-kaggle-bridge-regression.yml']
 permissions:
   contents: read
 jobs:
@@ -14,5 +14,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install Pillow==10.4.0
+      - run: pip install Pillow==10.4.0 numpy==1.26.4 scipy==1.13.1
       - run: python verification/f01/kaggle_bridge_qa.py -v
+      - run: python verification/f01/local_triposg_qa.py -v
+      - run: python verification/f01/forge_mask_qa.py -v
