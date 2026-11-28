@@ -1,0 +1,80 @@
+{
+ "case": "clock",
+ "provider": "Kaggle CPU session for mask + flow (latents saved), session hit the old 4 h limit during extraction; extraction finished on this server from the same latents (--latents)",
+ "source": "Wikimedia Commons HARD10 public image, see hard10_manifest.json",
+ "mask": {
+  "mask_model": "BiRefNet",
+  "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+  "license": "MIT",
+  "binarized": false,
+  "components": 1,
+  "solid_pixels": 511605,
+  "soft_pixels": 5928,
+  "bridge": {
+   "large_parts": 1,
+   "occluder": "not_needed"
+  }
+ },
+ "engine": {
+  "engine": "TripoSG",
+  "model_revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+  "device": "cpu",
+  "dtype": "float32",
+  "steps": 50,
+  "guidance": 7.0,
+  "seed": 42,
+  "octree_depth": 9,
+  "faces": 2348948,
+  "vertices": 1174440,
+  "denoise_seconds": 0.2,
+  "inference_seconds": 2369.0,
+  "extraction": {
+   "dense_queries": 16777216,
+   "dense_seconds": 1130.6,
+   "band_queries_512": 17966360,
+   "band_seconds_512": 1233.2
+  },
+  "glb_sha256": "a7e8ce03c1d768fb40e40257f991f263a62dc34c36b051850f38884410431851",
+  "bytes": 42281468
+ },
+ "raw_khronos": [
+  0,
+  0
+ ],
+ "mobile": {
+  "source_components": 6,
+  "triangles": 59000,
+  "vertices": 29466,
+  "bytes": 1416260,
+  "topology": {
+   "euler": -34,
+   "boundary_edges": 0,
+   "boundary_length": 0.0,
+   "nonmanifold": 0,
+   "components": 6,
+   "winding": true
+  },
+  "p99_surface_pct": 0.02776195279324299,
+  "max_sample_surface_pct": 0.05270015245806971,
+  "area_change_pct": 0.08137990242345072,
+  "self_intersection_pairs": 0,
+  "method": "topology_first_local_self_boolean",
+  "decimation_overrides": {},
+  "geometry_gate_passed": true
+ },
+ "mobile_glb_sha256": "3fd6846738a95cdd94056518fbf36cd55762666c0fa1c82978b151ae19b3b01f",
+ "mobile_khronos": [
+  0,
+  0
+ ],
+ "editor": {
+  "provider": "local test double",
+  "renderedTriangles": 59000,
+  "angles": 5,
+  "dialogSizes": 3,
+  "KhronosErrors": 0,
+  "KhronosWarnings": 0,
+  "jsErrors": 0
+ },
+ "visual_review": "Bell with hammer, corner finials, frame pillars, the open side door as a large panel and the dial with its hand are reconstructed; rods and structures of the movement show inside the frame, gear teeth only partially. 6 closed parts."
+}
