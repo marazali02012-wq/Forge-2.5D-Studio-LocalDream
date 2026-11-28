@@ -32,10 +32,14 @@ def run(args, cwd=None, timeout=3600):
 
 
 assert shutil.disk_usage(base).free > 14 * 2**30, "14 GiB free disk required"
+# Live 2026-11-28: SAM2 refuses to import when the script's own directory
+# contains the sam2 checkout, so Forge sources live in a separate folder.
+forge = base / "forge"
+forge.mkdir(exist_ok=True)
 for name, source in FORGE_FILES.items():  # noqa: F821 - prepended by the server
     assert name in ("forge_mask.py", "triposg_cpu.py")
     compile(source, name, "exec")
-    (base / name).write_text(source)
+    (forge / name).write_text(source)
 run([sys.executable, "-m", "pip", "install", "uv==0.9.26"])
 run([sys.executable, "-m", "uv", "python", "install", "3.10"])
 if not (venv / "bin/python").exists():
@@ -75,12 +79,12 @@ assert sha(inputs[0]) == FORGE_IMAGE_SHA256, "Unexpected input bytes"  # noqa: F
 run([py, "-c", "from PIL import Image, ImageOps; Image.MAX_IMAGE_PIXELS=12_000_000; "
      "im=Image.open(" + repr(str(inputs[0])) + "); assert im.format in ('PNG','JPEG','WEBP'); "
      "ImageOps.exif_transpose(im).convert('RGB').save(" + repr(str(out / "source.png")) + ")"])
-run([py, base / "forge_mask.py", out / "source.png", base / "rgba.png", "--sam2-checkpoint", checkpoint],
+run([py, forge / "forge_mask.py", out / "source.png", base / "rgba.png", "--sam2-checkpoint", checkpoint],
     timeout=1800)
 # bfloat16 autocast only helps with native AMX/AVX512-BF16; otherwise keep float32.
 flags = pathlib.Path("/proc/cpuinfo").read_text()
 bf16 = ["--bf16-transformer"] if (FORGE_BF16 and ("amx_bf16" in flags or "avx512_bf16" in flags)) else []  # noqa: F821
-run([py, base / "triposg_cpu.py", tripo_src, weights, base / "rgba.png", out / "model.glb", *bf16],
+run([py, forge / "triposg_cpu.py", tripo_src, weights, base / "rgba.png", out / "model.glb", *bf16],
     timeout=4 * 3600)
 local = json.loads((out / "model.report.json").read_text())
 mask = json.loads((base / "rgba.mask.json").read_text())

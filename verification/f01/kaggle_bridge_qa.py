@@ -230,6 +230,10 @@ class BridgeTest(unittest.TestCase):
             self.assertEqual(namespace["FORGE_FILES"][name], (root / name).read_text())
         self.assertEqual(namespace["FORGE_IMAGE_SHA256"], "a" * 64)
         self.assertIs(namespace["FORGE_BF16"], False)
+        # SAM2 refuses imports from its checkout's parent directory (live failure).
+        self.assertIn('forge = base / "forge"', payload["text"])
+        self.assertIn('sam2_src = base / "sam2"', payload["text"])
+        self.assertNotIn('base / "forge_mask.py"', payload["text"])
         provider.rpc = lambda *_: {"metadata": {
             "isPrivate": True, "currentVersionNumber": 1,
             "datasetDataSources": ["fixture/test-dataset"]}}
