@@ -111,6 +111,9 @@ def meshlib_mesh(mesh):
     )
 
 
+DECIMATION = {}
+
+
 def topology_first(part, target):
     """Experimental local intersection repair after topology-aware decimation."""
     from meshlib import mrmeshpy, mrmeshnumpy
@@ -126,6 +129,8 @@ def topology_first(part, target):
     decimation = mrmeshpy.DecimateSettings()
     decimation.maxDeletedFaces = mesh.topology.numValidFaces() - target
     decimation.preventNormalFlips = True
+    for key, value in DECIMATION.items():
+        setattr(decimation, key, value)
     mrmeshpy.decimateMesh(mesh, decimation)
     mesh.pack()
     return trimesh.Trimesh(
@@ -167,7 +172,17 @@ def main():
         "--topology-first", action="store_true",
         help="Run the optional MeshLib 3.2.0.75 research candidate and collision gate",
     )
+    parser.add_argument("--angle-weighted", action="store_true",
+                        help="MeshLib angleWeightedDistToPlane (research; default off)")
+    parser.add_argument("--stabilizer", type=float, help="MeshLib stabilizer (default 0.001)")
+    parser.add_argument("--max-aspect", type=float, help="MeshLib maxTriangleAspectRatio (default 20)")
     args = parser.parse_args()
+    if args.angle_weighted:
+        DECIMATION["angleWeightedDistToPlane"] = True
+    if args.stabilizer is not None:
+        DECIMATION["stabilizer"] = args.stabilizer
+    if args.max_aspect is not None:
+        DECIMATION["maxTriangleAspectRatio"] = args.max_aspect
     source = trimesh.load(args.source, force="mesh", process=False)
     if source.is_empty or source.visual.defined or not np.isfinite(source.vertices).all():
         raise ValueError("Expected a finite, uncolored mesh")
@@ -223,6 +238,7 @@ def main():
         report["self_intersection_pairs"] = collisions
         report["method"] = "topology_first_local_self_boolean"
         accepted = accepted and collisions == 0
+    report["decimation_overrides"] = DECIMATION
     report["geometry_gate_passed"] = accepted
     serialized = json.dumps(report, indent=2)
     (args.output / "report.json").write_text(serialized + "\n")
