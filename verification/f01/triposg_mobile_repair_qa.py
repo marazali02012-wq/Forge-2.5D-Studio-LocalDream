@@ -8,8 +8,9 @@ import pymeshfix
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 import trimesh
+import vtk
 
-from openmvs_mobile_lod import candidate, distances, topo
+from openmvs_mobile_lod import candidate, distances, poly, topo
 
 
 def components(mesh):
@@ -51,6 +52,41 @@ def surface_difference(source, model, scale):
     return float(np.quantile(delta, .99)), float(delta.max())
 
 
+def repair_diagnostics(source, before, after, scale):
+    """Measure the same source vertices before and after topology repair."""
+    vertices = np.asarray(source.vertices)
+    indices = np.random.default_rng(923).choice(len(vertices), min(10000, len(vertices)), replace=False)
+
+    def directed(mesh):
+        locator = vtk.vtkStaticCellLocator()
+        locator.SetDataSet(poly(mesh))
+        locator.BuildLocator()
+        nearest = [0.0, 0.0, 0.0]
+        cell, subcell, squared = vtk.reference(0), vtk.reference(0), vtk.reference(0.0)
+        values = np.empty(len(indices))
+        for i, index in enumerate(indices):
+            locator.FindClosestPoint(vertices[index], nearest, cell, subcell, squared)
+            values[i] = float(squared) ** .5 * 100 / scale
+        return values
+
+    pre = directed(before)
+    post = directed(after)
+    worst = np.argsort(post)[-8:][::-1]
+    return {
+        "sampled_source_vertices": len(indices),
+        "before_topology": topo(before),
+        "before_source_to_candidate_max_pct": float(pre.max()),
+        "after_source_to_candidate_max_pct": float(post.max()),
+        "over_limit_before": int(np.count_nonzero(pre >= .5)),
+        "over_limit_after": int(np.count_nonzero(post >= .5)),
+        # Coordinates are local only. Do not publish this diagnostic JSON for a private mesh.
+        "worst_post_repair_samples": [{
+            "point": vertices[indices[i]].tolist(),
+            "before_pct": float(pre[i]),
+            "after_pct": float(post[i]),
+        } for i in worst],
+    }
+
 def preserve_small_part(part, scale):
     fixed = repair(part)
     if clean(fixed):
@@ -67,10 +103,70 @@ def preserve_small_part(part, scale):
     return fixed
 
 
+def meshlib_mesh(mesh):
+    from meshlib import mrmeshnumpy
+
+    return mrmeshnumpy.meshFromFacesVerts(
+        np.asarray(mesh.faces, dtype=np.int32), np.asarray(mesh.vertices, dtype=np.float32)
+    )
+
+
+def topology_first(part, target):
+    """Experimental local intersection repair after topology-aware decimation."""
+    from meshlib import mrmeshpy, mrmeshnumpy
+
+    mesh = meshlib_mesh(part)
+    mrmeshpy.fixMultipleEdges(mesh)
+    mrmeshpy.duplicateMultiHoleVertices(mesh)
+    hole_fill = mrmeshpy.FillHoleParams()
+    hole_fill.metric = mrmeshpy.getUniversalMetric(mesh)
+    for edge in mesh.topology.findHoleRepresentiveEdges():
+        mrmeshpy.fillHole(mesh, edge, hole_fill)
+
+    decimation = mrmeshpy.DecimateSettings()
+    decimation.maxDeletedFaces = mesh.topology.numValidFaces() - target
+    decimation.preventNormalFlips = True
+    mrmeshpy.decimateMesh(mesh, decimation)
+    mesh.pack()
+    return trimesh.Trimesh(
+        mrmeshnumpy.getNumpyVerts(mesh), mrmeshnumpy.getNumpyFaces(mesh.topology), process=False
+    )
+
+
+def fix_local_intersections(model):
+    from meshlib import mrmeshpy, mrmeshnumpy
+
+    mesh = meshlib_mesh(model)
+    settings = mrmeshpy.SelfIntersections.Settings()
+    settings.method = mrmeshpy.FixSelfIntersectionMethod.SelfBoolean
+    settings.touchIsIntersection = False
+    mrmeshpy.SelfIntersections.fix(mesh, settings)
+    mesh.pack()
+    return trimesh.Trimesh(
+        mrmeshnumpy.getNumpyVerts(mesh), mrmeshnumpy.getNumpyFaces(mesh.topology), process=False
+    )
+
+
+def collision_count(model):
+    from meshlib import mrmeshpy
+
+    mesh = meshlib_mesh(model)
+    if mesh.topology.numValidFaces() != len(model.faces):
+        raise ValueError("Triangle count changed during intersection validation")
+    return len(mrmeshpy.findSelfCollidingTriangles(mrmeshpy.MeshPart(mesh)))
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--diagnose-repair", action="store_true",
+        help="Save directed error and local hotspots before/after repair in the private output directory",
+    )
+    parser.add_argument(
+        "--topology-first", action="store_true",
+        help="Run the optional MeshLib 3.2.0.75 research candidate and collision gate",
+    )
     args = parser.parse_args()
     source = trimesh.load(args.source, force="mesh", process=False)
     if source.is_empty or source.visual.defined or not np.isfinite(source.vertices).all():
@@ -84,9 +180,15 @@ def main():
     target = 59000 - sum(len(part.faces) for part in parts)
     if target <= 6:
         raise ValueError("Accessories exceed the triangle budget")
-    parts.insert(0, repair(candidate(largest, target, "quadric")))
-
-    model = trimesh.util.concatenate(parts)
+    if args.topology_first:
+        simplified = topology_first(largest, target)
+        combined = trimesh.util.concatenate([simplified, *parts])
+        before = combined if args.diagnose_repair else None
+        model = fix_local_intersections(combined)
+    else:
+        simplified = candidate(largest, target, "quadric")
+        before = trimesh.util.concatenate([simplified, *parts]) if args.diagnose_repair else None
+        model = trimesh.util.concatenate([repair(simplified), *parts])
     if not clean(model):
         raise ValueError("Invalid repaired surface")
     args.output.mkdir(exist_ok=False, mode=0o700)
@@ -116,9 +218,17 @@ def main():
         and topology["components"] == report["source_components"]
         and p99 < .1 and maximum < .5 and area_change < 1
     )
+    if args.topology_first:
+        collisions = collision_count(result)
+        report["self_intersection_pairs"] = collisions
+        report["method"] = "topology_first_local_self_boolean"
+        accepted = accepted and collisions == 0
     report["geometry_gate_passed"] = accepted
     serialized = json.dumps(report, indent=2)
     (args.output / "report.json").write_text(serialized + "\n")
+    if before is not None:
+        diagnostics = repair_diagnostics(source, before, result, scale)
+        (args.output / "repair_diagnostics.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
     print(serialized, flush=True)
     if not accepted:
         raise SystemExit("Candidate is diagnostic only: geometric quality gate rejected it")
