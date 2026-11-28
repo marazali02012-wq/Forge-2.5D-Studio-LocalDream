@@ -2,7 +2,7 @@ name: F02 actual SAM2 surface part selection lab
 on:
   push:
     branches: [forge-f02-segmentation-lab]
-    paths: ['studio/f02/**','verification/f02/**','.github/workflows/forge-f02-sam2-surface.yml']
+    paths: ['studio/f02/surface_selection.py','verification/f02/sam2_surface_qa.py','.github/workflows/forge-f02-sam2-surface.yml']
   workflow_dispatch:
 permissions:
   contents: read
