@@ -13,53 +13,60 @@ jobs:
     environment: forge-kaggle
     timeout-minutes: 5
     steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install official CLI before granting credential
-        run: python -m pip install --disable-pip-version-check 'kaggle==2.2.5'
-      - name: Confirm authenticated private dataset listing without publishing data
+      - name: Verify private dataset metadata using official Kaggle HTTPS protocol
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
-          python - <<'PY'
-          import os, subprocess, re, csv, io
+          python3 - <<'PY'
+          import json, os, re, urllib.request, urllib.error
           token=os.environ.get('KAGGLE_API_TOKEN','').strip()
-          if not token:
-              raise SystemExit('AUTH NOT TESTED: environment secret missing')
-          if not token.startswith('KGAT_') or any(c.isspace() for c in token):
-              raise SystemExit('AUTH NOT TESTED: token format invalid; paste only the access token')
-          os.environ['KAGGLE_API_TOKEN']=token
-          def cmd(*args):
+          if not re.fullmatch(r'KGAT_[A-Za-z0-9_.~+/=-]+',token):
+              raise SystemExit('AUTH NOT TESTED: missing or invalid token format')
+          # Official SDK protocol: POST /v1/{service}/{method}, JSON fields and bearer token.
+          # Do not forward credentials on redirects or print response bodies.
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs):
+                  return None
+          opener=urllib.request.build_opener(NoRedirect())
+          def rpc(method,body):
+              assert method in ('ListDatasets','ListDatasetFiles')
+              url='https://api.kaggle.com/v1/datasets.DatasetApiService/'+method
+              req=urllib.request.Request(url,data=json.dumps(body).encode(),
+                  headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'},
+                  method='POST')
               try:
-                  r=subprocess.run(['kaggle',*args],capture_output=True,text=True,timeout=60)
-              except subprocess.TimeoutExpired:
-                  raise SystemExit('AUTH NOT VERIFIED: timeout')
-              if r.returncode:
-                  # Never print subprocess output: it may contain credentials or private metadata.
-                  msg=(r.stdout+'\n'+r.stderr).lower()
-                  reason=next((label for label,pattern in [
-                      ('authentication rejected',r'\b401\b|unauthorized|invalid token'),
-                      ('access forbidden',r'\b403\b|forbidden'),
-                      ('resource not found',r'\b404\b'),
-                      ('CLI argument mismatch',r'unrecognized arguments|invalid choice|usage:'),
-                      ('network error',r'connection|timeout|resolve|ssl'),
-                      ('dependency error',r'importerror|modulenotfounderror|attributeerror|typeerror'),
-                  ] if re.search(pattern,msg)),'unspecified CLI error')
-                  raise SystemExit('AUTH NOT VERIFIED: '+reason+'; CLI exit '+str(r.returncode))
-              return r.stdout
-          # No slug search filter: titles and slugs need not match search semantics.
-          for page in range(1,6):
-              data=cmd('datasets','list','--mine','--csv','--page',str(page))
-              refs=re.findall(r'(?m)^"?([a-zA-Z0-9_-]+/forge-warrior-test)"?(?:,|\s|$)',data)
-              if len(set(refs))==1:
-                  listing=cmd('datasets','files',refs[0],'--csv')
-                  if not re.search(r'\.(png|jpe?g|webp)(?:[,\s"]|$)',listing,re.I):
-                      raise SystemExit('AUTH OK: private dataset found but image metadata not verified')
-                  print('KAGGLE_AUTH_OK: private dataset and image metadata confirmed; no file bytes downloaded')
+                  with opener.open(req,timeout=45) as r:
+                      data=json.loads(r.read(4*1024*1024))
+                      print(method+': HTTP '+str(r.status),flush=True)
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(method+': HTTP '+str(e.code)+'; access not verified')
+              except Exception as e:
+                  raise SystemExit(method+': '+type(e).__name__+'; access not verified')
+              if not isinstance(data,dict):
+                  raise SystemExit(method+': unexpected JSON schema')
+              if data.get('errorMessage') or data.get('error') or (isinstance(data.get('code'),int) and data['code']>=400):
+                  raise SystemExit(method+': server reported an error')
+              return data
+          body={'group':'DATASET_SELECTION_GROUP_MY_PRIVATE','pageSize':100}
+          refs=set()
+          for _ in range(5):
+              data=rpc('ListDatasets',body)
+              rows=data.get('datasets',[])
+              if not isinstance(rows,list):
+                  raise SystemExit('Unexpected dataset schema')
+              for row in rows:
+                  ref=row.get('ref','')
+                  if row.get('isPrivate') is True and re.fullmatch(r'[a-zA-Z0-9_-]+/forge-warrior-test',ref):
+                      refs.add(ref)
+              if refs or not data.get('nextPageToken'):
                   break
-              if not data.strip() or 'no datasets found' in data.lower():
-                  raise SystemExit('AUTH NOT VERIFIED: private dataset missing from own dataset listing')
-          else:
-              raise SystemExit('AUTH NOT VERIFIED: expected private dataset not found within 5 pages')
+              body['pageToken']=data['nextPageToken']
+          if len(refs)!=1:
+              raise SystemExit('AUTH NOT VERIFIED: expected private dataset not uniquely found')
+          owner,slug=refs.pop().split('/')
+          data=rpc('ListDatasetFiles',{'ownerSlug':owner,'datasetSlug':slug,'pageSize':100})
+          rows=data.get('datasetFiles',[])
+          if not any(re.search(r'\.(png|jpe?g|webp)$',str(x.get('name','')),re.I) for x in rows):
+              raise SystemExit('AUTH OK: private dataset found; image metadata not confirmed')
+          print('KAGGLE_AUTH_OK: private dataset and image metadata verified; no file bytes or GPU used')
           PY
