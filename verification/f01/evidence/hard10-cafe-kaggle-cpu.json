@@ -1,0 +1,120 @@
+{
+ "case": "02-cafe",
+ "source": "Wikimedia Commons 'Waiting in a café (Unsplash).jpg' (CC0); bytes re-encoded losslessly for the retry (pixels identical)",
+ "live_chain": {
+  "chain": "editor->server->provider->BiRefNet->TripoSG->mobile gate->editor->export",
+  "seconds": 1039,
+  "renderedTriangles": 58620,
+  "servedBytes": 1420436,
+  "angles": 5,
+  "KhronosServed": [
+   0,
+   0
+  ],
+  "KhronosExport": [
+   0,
+   0
+  ],
+  "jsErrors": 0
+ },
+ "live_chain_statuses": [
+  {
+   "seconds": 1,
+   "text": "İş kaydediliyor…"
+  },
+  {
+   "seconds": 3,
+   "text": "Kaggle CPU oturumu maskeyi ve TripoSG modelini üretiyor (3-4 saat sürebilir)."
+  },
+  {
+   "seconds": 1004,
+   "text": "GLB bütünlüğü ve mobil geometri kontrol ediliyor. · 16 dk"
+  },
+  {
+   "seconds": 1024,
+   "text": "GLB bütünlüğü ve mobil geometri kontrol ediliyor. · 17 dk"
+  },
+  {
+   "seconds": 1038,
+   "text": "GLB hazır. Editörde açabilirsin."
+  }
+ ],
+ "job": {
+  "created_to_ready_seconds": 12778,
+  "provider": "private Kaggle CPU session (no GPU/TPU, GPU quota unchanged)",
+  "restart_note": "worker restart at ~11:35 UTC; server reconciled the same job from SQLite; the 3 h wait limit was raised to 6 h for Kaggle CPU (e317fc9)"
+ },
+ "kaggle_report": {
+  "engine": "TripoSG",
+  "model_revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+  "device": "cpu",
+  "dtype": "float32",
+  "steps": 50,
+  "seed": 42,
+  "faces": 1667972,
+  "vertices": 834490,
+  "denoise_seconds": 5267.6,
+  "inference_seconds": 12465.0,
+  "extraction": {
+   "dense_queries": 16777216,
+   "dense_seconds": 4532.0,
+   "band_queries_512": 9893264,
+   "band_seconds_512": 2654.5
+  },
+  "glb_sha256": "88639ba2c0ead3494de74e2553d4de7a27df7c10efd2a2101cf00be8777045df",
+  "bytes": 30030352,
+  "original_sha256": "402f6a7041cb508384789efdff0d0aeb344348f343ab67961bfcf0c98d642183",
+  "source_sha256": "c992ce6a305609d55fdf6d90d05fea02a98d15797888f373f4b077ba6113cfb1"
+ },
+ "mask": {
+  "mask_model": "BiRefNet",
+  "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+  "license": "MIT",
+  "binarized": false,
+  "seconds": 69.2,
+  "input_sha256": "c992ce6a305609d55fdf6d90d05fea02a98d15797888f373f4b077ba6113cfb1",
+  "output_sha256": "5e4fc96a5d76d23e6bb6c2debcbfe1efe36fc4fd6d8fac05abb8df089accc6d7",
+  "components": 2,
+  "removed_components": 0,
+  "removed_pixels": 0,
+  "solid_pixels": 21227,
+  "soft_pixels": 1526,
+  "bridge": {
+   "large_parts": 2,
+   "occluder": "attached",
+   "gap_px": 33.8,
+   "prompt": [
+    499.5,
+    688.0
+   ],
+   "sam_score": 0.923,
+   "occluder_area_ratio": 0.237
+  }
+ },
+ "raw": {
+  "faces": 1667972,
+  "components": 483,
+  "watertight": true,
+  "boundary_edges": 0,
+  "nonmanifold_edges": 0,
+  "khronos": [
+   0,
+   0
+  ]
+ },
+ "mobile": {
+  "triangles": 58620,
+  "vertices": 29830,
+  "components": 483,
+  "watertight": true,
+  "boundary_edges": 0,
+  "nonmanifold_edges": 0,
+  "khronos": [
+   0,
+   0
+  ],
+  "sha256": "2884005e2c93cefb534a80170eb6e2ca842dcd23f0c803fd44a638fd88f94b2e",
+  "bytes": 1420436
+ },
+ "visual_review": "Complete seated person: head, hair, face, hand at the face, cup, torso, crossed legs and shoes; the table top stands in front of the lap. Defect: many small loose fragments at the table edge/underside (483 parts), kept by the component-preserving gate; noise cleanup belongs to F04."
+}
