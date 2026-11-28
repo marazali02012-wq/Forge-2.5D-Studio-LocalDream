@@ -34,5 +34,14 @@ Arka plan ve maske:
 
 ## 3. Ölçümler
 
-Bu bölüm, ölçümler tamamlandıkça [ana geliştirme listesi](FORGE_ANA_GELISTIRME_LISTESI.md)
-kayıtlarıyla birlikte güncellenir.
+| Vaka | Altyapı | Süre | Ham çıktı | Mobil kapı | Kanıt |
+| --- | --- | --- | --- | --- | --- |
+| Savaşçı (özel) | Kaggle T4, otomatik iş | 183,8 sn (model yükleme dahil) + ~2 sa kuyruk | 1.905.082 yüz, GLB `bca8b2a0…` | Geçti: 59.050 üçgen, 27/27 bileşen, en büyük sapma %0,16450 | Yalnız sayısal (özel) |
+| Bisiklet (CC0) | Bu oturumun sunucusu, 4 vCPU, float32 | 55 dk: difüzyon 27,6, yoğun ızgara 19,1, 512 bandı 8,3 | 730.036 yüz, 118 bileşen, kapalı, Khronos 0/0 | Geçti: 58.494 üçgen, 118/118, en büyük sapma %0,146 | [görüntü](../verification/f01/evidence/hard10-bicycle-triposg-cpu.jpg), [json](../verification/f01/evidence/hard10-bicycle-triposg-cpu.json) |
+
+Hassasiyet A/B (aynı gizli temsil, 32³/64³ duman ızgarası): bf16 çözücü 2,6 kat hızlı, ama
+37→34 bileşen ve en büyük sapma %15,2 verdi; reddedildi. 1024³ çıkarım (derinlik 10)
+float32 ızgaralarla 15 GB RAM'e sığmıyor; 24 GB üzeri RAM veya GPU gerekiyor.
+
+Kaggle CPU oturumları kuyruksuz başlıyor ve kurulumu yaklaşık 4 dakikada bitiriyor. Üretim
+süresi bu sunucudan uzun; kesin süreler tamamlanan işlerle eklenecek.
