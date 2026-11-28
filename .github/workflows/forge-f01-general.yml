@@ -2,7 +2,7 @@ name: F01 general purpose true 3D regression
 on:
   push:
     branches: [forge-r70-surface-lab]
-    paths: ['verification/f01/**','.github/workflows/forge-f01-general.yml']
+    paths: ['verification/f01/general_static_qa.py','studio/cloud-ai/cpu_probe.py','studio/cloud-ai/private_api.py','studio/cloud-ai/lod_qa.py','.github/workflows/forge-f01-general.yml']
   workflow_dispatch:
 permissions:
   contents: read
