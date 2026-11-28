@@ -20,7 +20,7 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           python3 - <<'PY'
-          import json, os, re, time, urllib.request, urllib.error
+          import json, os, re, urllib.request, urllib.error
           token=os.environ.get('KAGGLE_API_TOKEN','').strip()
           if not token.startswith('KGAT_') or len(token)<=5 or any(not 33<=ord(c)<=126 for c in token):
               raise SystemExit('Missing or malformed access token')
@@ -60,26 +60,43 @@ jobs:
           used=seconds(q.get('timeUsed','0s'))
           reserved=seconds(q.get('timeReserved','0s'))
           print('QUOTA_SECONDS used='+str(round(used,1))+' reserved='+str(round(reserved,1))+' available='+str(round(max(0,total-used-reserved),1)),flush=True)
-          states=('QUEUED','RUNNING','COMPLETE','ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED','NEW_SCRIPT')
-          for i in range(3):
-              data=rpc(k,'GetKernelSessionStatus',target)
-              if data.get('status') is not None:break
-              if i<2:time.sleep(5)
+          target['versionLabel']='v1'
+          data=rpc(k,'GetKernelSessionStatus',target)
           status=data.get('status')
-          if type(status) is int and 0<=status<len(states):status=states[status]
-          if status is None:
-              # Official SDK declares QUEUED as the protobuf default.
-              # Omission alone does not establish the actual execution state.
-              print('MODEL_STATUS_UNREPORTED; SDK default QUEUED; no resubmission',flush=True)
-              if data.get('failureMessage'):print('Server returned a failure message; inspect private notebook',flush=True)
+          states=('QUEUED','RUNNING','COMPLETE','ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED','NEW_SCRIPT')
+          if type(status) is int and 0<=status<len(states):
+              status=states[status]
+          print('MODEL_JOB_STATUS: '+(status if status in states else 'UNREPORTED'),flush=True)
+          output=rpc(k,'ListKernelSessionOutput',dict(target,pageSize=100))
+          files=output.get('files',[])
+          log=output.get('log') or ''
+          failure=data.get('failureMessage') or ''
+          if not isinstance(files,list) or not isinstance(log,str) or not isinstance(failure,str):
+              raise SystemExit('Unexpected output or log schema')
+          print('PRIVATE_EXECUTION_LOG_PRESENT: '+str(bool(log.strip())),flush=True)
+          print('PRIVATE_FAILURE_MESSAGE_PRESENT: '+str(bool(failure.strip())),flush=True)
+          # Only report known milestones or failure categories. Raw logs can contain private paths or signed URLs.
+          diagnostic=(log+'\n'+failure).casefold()
+          markers={
+              'GPU_DETECTED':'detected gpus:',
+              'CUDA_EXTENSION_READY':'py310 cuda ok',
+              'ENGINE_IMPORT_READY':'triposg import ok',
+              'INFERENCE_FINISHED':'forge_auto_model_ready',
+              'DATASET_FILE_COUNT_ERROR':'expected exactly one private image',
+              'SOURCE_HASH_MISMATCH':'unexpected input bytes',
+              'GPU_MEMORY_ERROR':'cuda out of memory',
+              'DISK_ERROR':'no space left on device',
+              'DEPENDENCY_INSTALL_ERROR':'non-zero exit status',
+              'TIME_LIMIT_ERROR':'timeoutexpired',
+          }
+          print('PRIVATE_EXECUTION_MARKERS: '+(','.join(key for key,phrase in markers.items() if phrase in diagnostic) or 'none'),flush=True)
+          names={x.get('fileName') for x in files if isinstance(x,dict)}
+          expected=all(name in names or 'forge-f01-auto/'+name in names for name in ('report.json','model.glb'))
+          print('EXPECTED_PRIVATE_OUTPUTS_PRESENT: '+str(expected),flush=True)
+          if not expected:
+              if status in ('COMPLETE','ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED'):
+                  raise SystemExit('Terminal model session without the expected artifacts')
               raise SystemExit(0)
-          if status not in states:raise SystemExit('Unexpected status enumeration')
-          print('MODEL_JOB_STATUS: '+status,flush=True)
-          if status in ('ERROR','CANCEL_REQUESTED','CANCEL_ACKNOWLEDGED'):raise SystemExit('Model job stopped; see private notebook logs')
-          if status!='COMPLETE':
-              print('MODEL_PENDING; no resubmission',flush=True)
-              raise SystemExit(0)
-          files=rpc(k,'ListKernelSessionOutput',dict(target,pageSize=100)).get('files',[])
           from urllib.parse import urlsplit
           import hashlib,struct
           def get(name,max_bytes):
