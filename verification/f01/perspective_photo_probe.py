@@ -23,7 +23,7 @@ def read_middlebury(root):
         # this benchmark mask is not a generic photo segmentation algorithm.
         fg=im.max(2)>18
         cc=label(fg);counts=np.bincount(cc.ravel());counts[0]=0
-        mask=binary_fill_holes(cc==counts.argmax())
+        mask=(cc>0)&(counts[cc]>=max(8,int(counts.max()*.001)))
         if not .002<mask.mean()<.8 or mask[0].any() or mask[-1].any() or mask[:,0].any() or mask[:,-1].any():raise ValueError("bad/clipped foreground "+name)
         ys,xs=np.where(mask);uv=np.array([xs.mean(),ys.mean(),1.])
         C=-R.T@t;ray=R.T@np.linalg.solve(K,uv);ray/=np.linalg.norm(ray)
@@ -108,6 +108,17 @@ def main():
         im=r["im"].copy();im[truth&~pred]=[240,50,50];im[pred&~truth]=[20,190,240]
         sheet.paste(Image.fromarray(r["im"]),(0,480*i));sheet.paste(Image.fromarray(im),(640,480*i))
     sheet.save(a.output/"heldout-views.jpg")
+    # Four independent camera-angle mesh previews, no use of input pixels as geometry.
+    v=np.asarray(m.vertices).copy();v-=(v.min(0)+v.max(0))/2;v*=2/np.ptp(v,axis=0).max()
+    f=np.asarray(m.faces);rgb=np.asarray(m.visual.vertex_colors)[f,:3].mean(1)/255.
+    rgb=np.rint(np.where(rgb<=.0031308,12.92*rgb,1.055*np.maximum(rgb,0)**(1/2.4)-.055)*255).astype(np.uint8)
+    sheet=Image.new("RGB",(1200,320),(32,38,48));d=ImageDraw.Draw(sheet)
+    for i,angle in enumerate([0,90,180,45]):
+        q=np.deg2rad(angle);x=v[:,0]*np.cos(q)-v[:,2]*np.sin(q);z=v[:,0]*np.sin(q)+v[:,2]*np.cos(q)
+        pp=np.stack([i*300+150+x*125,150-v[:,1]*125],1)
+        for k in np.argsort(z[f].mean(1)):d.polygon([tuple(pp[j]) for j in f[k]],fill=tuple(map(int,rgb[k])))
+        d.text((i*300+10,298),str(angle)+" deg",fill="white")
+    sheet.save(a.output/"mesh-views.png")
     m.export(a.output/"model.glb",include_normals=True);reload=trimesh.load(a.output/"model.glb",force="mesh",process=False)
     assert len(reload.faces)==len(m.faces) and reload.visual.kind=="vertex" and np.isfinite(reload.vertices).all()
     report=dict(scope="real calibrated perspective visual hull; controlled dark backdrop; not arbitrary-photo AI",train=len(train),heldout=len(test),heldout_iou=iou,mean_iou=float(np.mean(iou)),vertices=len(m.vertices),faces=len(m.faces),watertight=bool(m.is_watertight),vertex_color_coverage=coverage,seconds=time.monotonic()-t,input_hashes=[r["hash"] for r in data])
