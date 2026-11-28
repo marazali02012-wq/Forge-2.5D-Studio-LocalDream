@@ -1,0 +1,77 @@
+{
+ "case": "peacock",
+ "provider": "this cloud session CPU (4 vCPU, float32)",
+ "source": "Wikimedia Commons HARD10 public image, see hard10_manifest.json",
+ "mask": {
+  "mask_model": "BiRefNet",
+  "revision": "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4",
+  "license": "MIT",
+  "binarized": false,
+  "components": 10,
+  "solid_pixels": 242213,
+  "soft_pixels": 8957,
+  "bridge": null
+ },
+ "engine": {
+  "engine": "TripoSG",
+  "model_revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+  "device": "cpu",
+  "dtype": "float32",
+  "steps": 50,
+  "guidance": 7.0,
+  "seed": 42,
+  "octree_depth": 9,
+  "faces": 669516,
+  "vertices": 334728,
+  "denoise_seconds": 1397.2,
+  "inference_seconds": 2904.3,
+  "extraction": {
+   "dense_queries": 16777216,
+   "dense_seconds": 1149.1,
+   "band_queries_512": 5163024,
+   "band_seconds_512": 353.8
+  },
+  "glb_sha256": "17d84057b8cf2eae2db92cd550eff58d2b05588aa74530e210e882e144b2c1db",
+  "bytes": 12051736
+ },
+ "raw_khronos": [
+  0,
+  0
+ ],
+ "mobile": {
+  "source_components": 97,
+  "triangles": 59014,
+  "vertices": 29479,
+  "bytes": 1416724,
+  "topology": {
+   "euler": -28,
+   "boundary_edges": 0,
+   "boundary_length": 0.0,
+   "nonmanifold": 0,
+   "components": 97,
+   "winding": true
+  },
+  "p99_surface_pct": 0.03203976469270276,
+  "max_sample_surface_pct": 0.19639542597863852,
+  "area_change_pct": 0.10379441903746178,
+  "self_intersection_pairs": 0,
+  "method": "topology_first_local_self_boolean",
+  "decimation_overrides": {},
+  "geometry_gate_passed": true
+ },
+ "mobile_glb_sha256": "8015b716bd1297f945df0849d37d1cb3b66d96c7d3a96c6c08c74cf66a8b26aa",
+ "mobile_khronos": [
+  0,
+  0
+ ],
+ "editor": {
+  "provider": "local test double",
+  "renderedTriangles": 59014,
+  "angles": 5,
+  "dialogSizes": 3,
+  "KhronosErrors": 0,
+  "KhronosWarnings": 0,
+  "jsErrors": 0
+ },
+ "visual_review": "Full fan tail reconstructed as a curved 3D shell rising from the body (front, back, side and diagonal views); body, legs and head present; small leaf fragments from the mask edge show as spikes at the fan top. Mobile LOD keeps the silhouette."
+}
