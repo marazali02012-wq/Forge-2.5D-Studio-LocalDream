@@ -1,0 +1,53 @@
+name: F01 masked dense mobile LOD
+on:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/openmvs_mobile_lod.py','.github/workflows/forge-f01-openmvs-lod.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  lod:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: forge-f01-colmap-evidence
+          run-id: 46092877853
+          github-token: ${{ github.token }}
+          path: /tmp/masked-dense
+      - run: pip install numpy==1.26.4 scipy==1.13.1 trimesh==4.0.5 networkx==3.4.2 vtk==9.6.2
+      - name: Safe real dense LOD
+        run: python verification/f01/openmvs_mobile_lod.py /tmp/masked-dense/openmvs.glb f01-mobile-evidence
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts gltf-validator@2.0.0-dev.3.10
+        if: always()
+      - name: Independent GLB validation
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import validator from 'gltf-validator';
+          const d='f01-mobile-evidence';fs.mkdirSync(d,{recursive:true});
+          const report=JSON.parse(fs.readFileSync(d+'/report.json','utf8')),out={};
+          if(!report.selected)throw Error('No accepted candidate');
+          for(const r of report.candidates.filter(x=>x.accepted)){
+            const v=await validator.validateBytes(new Uint8Array(fs.readFileSync(d+'/'+r.mode+'.glb')));
+            out[r.mode]=v.issues;
+          }
+          fs.writeFileSync(d+'/validation.json',JSON.stringify(out,null,2));
+          if(Object.values(out).some(v=>v.numErrors||v.numWarnings))process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forge-f01-mobile-evidence
+          path: f01-mobile-evidence/
