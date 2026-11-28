@@ -1,0 +1,37 @@
+name: F01 Kaggle private authentication probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [forge-r70-surface-lab]
+    paths: ['verification/f01/kaggle_api_probe_request.txt']
+permissions:
+  contents: read
+jobs:
+  auth:
+    if: github.ref == 'refs/heads/forge-r70-surface-lab'
+    runs-on: ubuntu-24.04
+    environment: forge-kaggle
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install official CLI before granting credential
+        run: python -m pip install --disable-pip-version-check 'kaggle==1.8.0'
+      - name: Confirm authenticated private dataset listing without publishing data
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os, subprocess, re
+          if not os.environ.get('KAGGLE_API_TOKEN'):
+              raise SystemExit('AUTH NOT TESTED: environment secret missing')
+          try:
+              r=subprocess.run(['kaggle','datasets','list','--mine','--search','forge-warrior-test'],
+                  capture_output=True,text=True,timeout=60)
+          except subprocess.TimeoutExpired:
+              raise SystemExit('AUTH NOT VERIFIED: timeout')
+          if r.returncode or not re.search(r'(?m)^\s*[^\s/]+/forge-warrior-test(?:\s|,|$)',r.stdout):
+              raise SystemExit('AUTH NOT VERIFIED: expected private dataset not found')
+          print('KAGGLE_AUTH_OK: expected dataset visible; no GPU or file transfer requested')
+          PY
