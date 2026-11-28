@@ -15,6 +15,40 @@ try{
  const result=await page.evaluate(b64=>{const raw=parseForgeAiGLB(Uint8Array.from(atob(b64),c=>c.charCodeAt(0)).buffer),p=parts[0],a=raw.geometry.v,b=p.geometry.v;return {triangles:mesh(parts).pos.length/9,rendered:three.renderer.info.render.triangles,overflow:document.documentElement.scrollWidth>innerWidth,axisCorrect:a.every((v,i)=>Math.abs(v-b[i-i%3+(i%3+2)%3])<1e-6),normalCorrect:raw.geometry.n.every((v,i)=>Math.abs(v-p.geometry.n[i-i%3+(i%3+2)%3])<1e-6)}},data.toString('base64'));
  assert.equal(result.triangles,result.rendered);assert.ok(result.triangles>100&&!result.overflow&&result.axisCorrect&&result.normalCorrect);assert.deepEqual(errors,[]);
  for(const view of ['front','side','back']){await page.locator('#quickCamera [data-action='+view+']').click();await page.screenshot({path:dir+'/'+view+'.png'})}
- const report={actualUpload:true,actualInference:true,httpStatus:response.status(),authRejected:bad.status,invalidRejected:invalid.status,bytes:data.length,...result,glbErrors:validation.issues.numErrors,glbWarnings:validation.issues.numWarnings,errors,requests:requests.filter(s=>/^https?:/.test(s)).map(s=>new URL(s).origin)};
+ // F01: real mobile dialog and explicit high-detail upload, not a stub.
+ const quality={viewports:[],actualInference:false};
+ for(const [width,height] of [[800,360],[740,360],[667,375]]){
+  await page.setViewportSize({width,height});
+  await page.locator('#quickAi').click();
+  const q=page.locator('#forgeStaticQuality');await q.waitFor({state:'visible'});
+  assert.equal(await q.inputValue(),'128');
+  const bounds=await page.locator('#aiTools').boundingBox();
+  assert.ok(bounds&&bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=width+1&&bounds.y+bounds.height<=height+1);
+  await page.screenshot({path:dir+'/f01-quality-menu-'+width+'.png'});
+  quality.viewports.push({width,height,bounds});
+  await page.locator('#closeAiTools').click();
+ }
+ const chair=fs.readFileSync('/tmp/triposr/examples/chair.png');
+ await page.locator('#quickAi').click();
+ await page.locator('#forgeStaticQuality').selectOption('192');
+ await page.screenshot({path:dir+'/f01-quality-selected.png'});
+ const highResponse=page.waitForResponse(r=>r.url()===api+'/v1/generate?resolution=192'&&r.request().method()==='POST',{timeout:330000});
+ const chooser=page.waitForEvent('filechooser');
+ await page.locator('#aiTools [data-forge-action="forgeAiGenerate"]').click();
+ await (await chooser).setFiles({name:'chair.png',mimeType:'image/png',buffer:chair});
+ const hd=await highResponse;assert.equal(hd.status(),200);
+ const hdData=await hd.body();fs.writeFileSync(dir+'/f01-chair-hd.glb',hdData);
+ const hdValidation=await validator.validateBytes(hdData);
+ assert.equal(hdValidation.issues.numErrors,0);assert.equal(hdValidation.issues.numWarnings,0);
+ const parsed=await page.evaluate(b64=>parseForgeAiGLB(Uint8Array.from(atob(b64),c=>c.charCodeAt(0)).buffer).geometry.i.length/3,hdData.toString('base64'));
+ await page.waitForFunction(n=>parts[0]?.type==='aiMesh'&&parts[0].geometry.i.length/3===n,parsed,{timeout:120000});
+ quality.actualInference=true;quality.triangles=parsed;quality.bytes=hdData.length;quality.glbErrors=hdValidation.issues.numErrors;quality.glbWarnings=hdValidation.issues.numWarnings;
+ assert.ok(parsed>30000&&parsed<=60000);
+ assert.deepEqual(errors,[]);
+ for(const view of ['front','side','back']){
+  await page.locator('#quickCamera [data-action='+view+']').click();
+  await page.screenshot({path:dir+'/f01-chair-hd-'+view+'.png'});
+ }
+ const report={quality,actualUpload:true,actualInference:true,httpStatus:response.status(),authRejected:bad.status,invalidRejected:invalid.status,bytes:data.length,...result,glbErrors:validation.issues.numErrors,glbWarnings:validation.issues.numWarnings,errors,requests:requests.filter(s=>/^https?:/.test(s)).map(s=>new URL(s).origin)};
  fs.writeFileSync(dir+'/report.json',JSON.stringify(report,null,2));console.log(report);
 }finally{await browser.close();http.close()}
